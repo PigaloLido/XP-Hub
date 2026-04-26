@@ -1887,3 +1887,5 @@ local MainCorner = Instance.new("UICorner")
         end)
         return window
     end
+    
+return XPHub
