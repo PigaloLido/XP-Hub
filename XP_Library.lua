@@ -460,7 +460,7 @@ local MainCorner = Instance.new("UICorner")
 
     -- 1. ชื่อ Hub
     local HubTitle = Instance.new("TextLabel")
-    HubTitle.Text = GuiConfig.Title
+    HubTitle.Text = GuiConfig.Title or UI_TITLE or "XP Hub"
     HubTitle.Font = Enum.Font.ArialBold
     HubTitle.TextSize = 17
     HubTitle.TextColor3 = Colors.White
