@@ -40,13 +40,35 @@ if not isfolder(XPHub.ConfigFolder) then
 end
 
 
+local function ApplySettings(data)
+    if not data or type(data) ~= "table" then return end
+    for id, value in pairs(data) do
+        local obj = XPHub.Objects[id]
+        if obj then
+            -- สั่งให้ UI อัปเดตหน้าตา
+            if obj.Update then 
+                pcall(function() obj.Update(value) end) 
+            end
+            -- สั่งให้สคริปต์ทำงานจริง
+            if obj.Callback then
+                task.spawn(function()
+                    pcall(function() obj.Callback(value) end)
+                end)
+            end
+        end
+    end
+end
+
+XPHub.ConfigFolder = "XPHub_Configs"
+if not isfolder(XPHub.ConfigFolder) then makefolder(XPHub.ConfigFolder) end
+local AutoloadPath = XPHub.ConfigFolder .. "/autoload.txt"
+
 function XPHub:GetConfigList()
     local files = listfiles(self.ConfigFolder)
     local names = {}
     for _, file in ipairs(files) do
         if file:sub(-5) == ".json" then
-            local cleanPath = file:gsub("\\", "/")
-            local name = cleanPath:gsub(self.ConfigFolder .. "/", ""):gsub(".json", "")
+            local name = file:gsub("\\", "/"):gsub(self.ConfigFolder .. "/", ""):gsub(".json", "")
             table.insert(names, name)
         end
     end
@@ -57,7 +79,6 @@ function XPHub:SaveCurrentConfig(name)
     if not name or name == "" then return end
     local json = game:GetService("HttpService"):JSONEncode(self.ConfigData)
     writefile(self.ConfigFolder.."/"..name..".json", json)
-    print("Successfully saved config: " .. name)
 end
 
 function XPHub:LoadConfigData(name)
@@ -65,19 +86,15 @@ function XPHub:LoadConfigData(name)
     if isfile(fileName) then
         local json = readfile(fileName)
         local data = game:GetService("HttpService"):JSONDecode(json)
+        -- อัปเดตค่าเข้า ConfigData ปัจจุบัน
         for id, value in pairs(data) do self.ConfigData[id] = value end
-        
-        -- เรียก ApplySettings (ฟังก์ชันภายใน)
-        if ApplySettings then 
-            ApplySettings(data) 
-        end
-        print("Successfully loaded config: " .. name)
+        -- สั่งรัน ApplySettings เพื่อให้ UI และสคริปต์ทำงานตามค่าที่โหลด
+        ApplySettings(data)
         return data
     end
-    return nil
 end
 
-local AutoloadPath = XPHub.ConfigFolder .. "/autoload.txt"
+-- 4. ฟังก์ชัน Autoload
 function XPHub:SetAutoload(name) writefile(AutoloadPath, name) end
 function XPHub:GetAutoload() return isfile(AutoloadPath) and readfile(AutoloadPath) or nil end
 function XPHub:ResetAutoload() if isfile(AutoloadPath) then delfile(AutoloadPath) end end
