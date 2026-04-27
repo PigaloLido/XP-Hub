@@ -28,67 +28,73 @@ end
 local XPHub = { 
     Elements = {},   
     ConfigData = {}, 
-    Objects = {} -- เก็บ UI Objects และ Callback สำหรับระบบ Load
+    Objects = {}, -- สำหรับระบบ Save/Load
+    MainFrame = nil,
+    ConfigFolder = "XPHub_Configs"
 }
+
 local activeDropdownList = nil
-local MainFrame
 
--- โฟลเดอร์สำหรับบันทึกการตั้งค่า (Config)
-local ConfigFolder = "XPHub_Configs"
-if not isfolder(ConfigFolder) then makefolder(ConfigFolder) end
+if not isfolder(XPHub.ConfigFolder) then 
+    makefolder(XPHub.ConfigFolder) 
+end
 
--- ฟังก์ชันจัดการ Config (Save/Load/Get List)
-local function GetConfigList()
-    local files = listfiles(ConfigFolder)
+
+function XPHub:GetConfigList()
+    local files = listfiles(self.ConfigFolder)
     local names = {}
     for _, file in ipairs(files) do
-        -- 1. ตรวจสอบก่อนว่าต้องเป็นไฟล์ .json เท่านั้น (ป้องกัน autoload.txt โผล่มา)
         if file:sub(-5) == ".json" then
             local cleanPath = file:gsub("\\", "/")
-            local nameWithExtension = cleanPath:gsub(ConfigFolder .. "/", "")
-            local finalName = nameWithExtension:gsub(".json", "")
-            
-            table.insert(names, finalName)
+            local name = cleanPath:gsub(self.ConfigFolder .. "/", ""):gsub(".json", "")
+            table.insert(names, name)
         end
     end
     return names
 end
 
-local function SaveCurrentConfig(name)
-    if name == "" then return end
-    local json = HttpService:JSONEncode(XPHub.ConfigData)
-    writefile(ConfigFolder.."/"..name..".json", json)
+function XPHub:SaveCurrentConfig(name)
+    if not name or name == "" then return end
+    local json = game:GetService("HttpService"):JSONEncode(self.ConfigData)
+    writefile(self.ConfigFolder.."/"..name..".json", json)
     print("Successfully saved config: " .. name)
 end
+
+function XPHub:LoadConfigData(name)
+    local fileName = self.ConfigFolder .. "/" .. name .. ".json"
+    if isfile(fileName) then
+        local json = readfile(fileName)
+        local data = game:GetService("HttpService"):JSONDecode(json)
+        for id, value in pairs(data) do self.ConfigData[id] = value end
+        
+        -- เรียก ApplySettings (ฟังก์ชันภายใน)
+        if ApplySettings then 
+            ApplySettings(data) 
+        end
+        print("Successfully loaded config: " .. name)
+        return data
+    end
+    return nil
+end
+
+local AutoloadPath = XPHub.ConfigFolder .. "/autoload.txt"
+function XPHub:SetAutoload(name) writefile(AutoloadPath, name) end
+function XPHub:GetAutoload() return isfile(AutoloadPath) and readfile(AutoloadPath) or nil end
+function XPHub:ResetAutoload() if isfile(AutoloadPath) then delfile(AutoloadPath) end end
+
 
 local function ApplySettings(data)
     for id, value in pairs(data) do
         local obj = XPHub.Objects[id]
         if obj then
-            -- 1. สั่งให้ UI ขยับหน้าตา (Visual Sync)
             if obj.Update then obj.Update(value) end
-            
-            -- 2. สั่งให้ Callback ทำงานจริง (Action Sync)
             if obj.Callback then
                 task.spawn(function()
-                    obj.Callback(value)
+                    pcall(function() obj.Callback(value) end)
                 end)
             end
         end
     end
-end
-
-local function LoadConfigData(name)
-    local fileName = ConfigFolder .. "/" .. name .. ".json"
-    if isfile(fileName) then
-        local json = readfile(fileName)
-        local data = HttpService:JSONDecode(json)
-        for id, value in pairs(data) do XPHub.ConfigData[id] = value end
-        
-        ApplySettings(data) -- เรียกใช้ฟังก์ชัน Sync ทันทีหลังโหลด
-        return data
-    end
-    return nil
 end
 
 local function UpdateState(id, value)
@@ -156,13 +162,6 @@ local function ResetAllSettings()
     
     print("Kill Switch: ทุกระบบถูก Reset และตัดการเชื่อมต่อ Keybind เรียบร้อยแล้ว")
 end
-
-local AutoloadFile = ConfigFolder .. "/autoload.txt"
-local function SetAutoload(name) writefile(AutoloadFile, name) end
-local function GetAutoload() return isfile(AutoloadFile) and readfile(AutoloadFile) or nil end
-local function ResetAutoload() if isfile(AutoloadFile) then delfile(AutoloadFile) end end
-
-
 
 
 -- ธีมสีหลัก Windows XP
