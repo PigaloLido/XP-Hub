@@ -1896,7 +1896,7 @@ local MainCorner = Instance.new("UICorner")
     end
     
 
-local allowedMaps = {168556275, 77747658251236} -- ใส่รหัสแมพที่คุณต้องการที่นี่
+local allowedMaps = {168556275, 123456789} -- ใส่รหัสแมพที่คุณต้องการที่นี่
 if not XPHub:CheckPlaceId(allowedMaps) then 
     return -- ถ้าแมพไม่ตรง สคริปต์จะหยุดทำงานทันที (และโดน Kick ตามเงื่อนไขใน Lib)
 end
