@@ -2,7 +2,7 @@
 local XPHub = loadstring(game:HttpGet("https://raw.githubusercontent.com/PigaloLido/XP-Hub/main/XP_Library.lua"))()
 
 
-local allowedMaps = {168556275, 77747658251236} -- ใส่รหัสแมพที่คุณต้องการที่นี่
+local allowedMaps = {168556275, 77747658251236, 70845479499574} -- ใส่รหัสแมพที่คุณต้องการที่นี่
 if not XPHub:CheckPlaceId(allowedMaps) then 
     return -- ถ้าแมพไม่ตรง สคริปต์จะหยุดทำงานทันที (และโดน Kick ตามเงื่อนไขใน Lib)
 end
@@ -15,10 +15,10 @@ local Win = XPHub:Window({
 
     -- ตัวอย่างการเรียกใช้งาน
     local Tab1 = Win:AddTab({
-        Name = "Dashboard",
+        Name = "General",
         Icon = "rbxassetid://7733960981" -- ใส่ ID ของ Icon ที่คุณต้องการ
     })
-    local Sec1 = Tab1:AddSection("🔥 General", "ปรับปรุงระบบโครงสร้างใหม่")
+    local Sec1 = Tab1:AddSection("🔥 General", "Automation")
 
     Sec1:AddDropdown({
         ID = "TargetNPC", -- เพิ่ม ID
@@ -104,16 +104,98 @@ local Win = XPHub:Window({
     })
 
     ------------------------------------------------------- Tab 2 -------------------------------------------------------
-
     local Tab2 = Win:AddTab({
+        Name = "Player",
+        Icon = "rbxassetid://7734053495"
+    })
+
+    local Sec2 = Tab2:AddSection("⌨️ Player Modifications", "ปรับแต่งตัวละคร")
+
+    Sec2:AddToggleSwitch({
+        ID = "Infinite_Stamina", 
+        Title = "Infinite Stamina",
+        Description = "ไม่เหนือยเมื่อวิ่ง",
+        Default = false,
+        Callback = function(v)
+            _G.StaminaToggled = v 
+
+            local function applyStamina(char)
+                if not char or not _G.StaminaToggled then return end
+
+                -- 1. เช็คทีมก่อนเริ่ม (ดึงจาก Attribute TEAM ที่คุณส่งรูปมาให้ดู)
+                local currentTeam = game.Players.LocalPlayer:GetAttribute("TEAM")
+                
+                -- ถ้าเป็น Lobby ให้หยุดทำงานทันที (ไม่รัน Connection)
+                if currentTeam == "Lobby" or not currentTeam then 
+                    return 
+                end
+
+                -- 2. กำหนดค่าตามทีมที่คุณระบุ
+                local maxVal = (currentTeam == "Killer") and 70 or 100
+
+                -- 3. บังคับค่าเริ่มต้น
+                char:SetAttribute("Stamina", maxVal)
+
+                -- 4. เชื่อมต่อระบบดักจับ
+                local connection
+                connection = char.AttributeChanged:Connect(function(attr)
+                    if not _G.StaminaToggled or game.Players.LocalPlayer:GetAttribute("TEAM") == "Lobby" then
+                        connection:Disconnect()
+                        return
+                    end
+
+                    if attr == "Stamina" then
+                        if char:GetAttribute("Stamina") < maxVal then
+                            char:SetAttribute("Stamina", maxVal)
+                        end
+                    end
+                end)
+            end
+
+            -- [ ส่วนควบคุม ]
+            if _G.StaminaToggled then
+                -- ทำงานกับตัวละครปัจจุบัน
+                applyStamina(game.Players.LocalPlayer.Character)
+
+                -- ดักจับตอนเกิดใหม่/เปลี่ยนแมพ
+                if not _G.StaminaObserver then
+                    _G.StaminaObserver = game.Players.LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        if _G.StaminaToggled then
+                            task.wait(1) -- รอให้ Attribute TEAM โหลดเสร็จก่อนเช็ค
+                            applyStamina(newChar)
+                        end
+                    end)
+                end
+            else
+                -- ล้างระบบเมื่อปิด Toggle
+                if _G.StaminaObserver then
+                    _G.StaminaObserver:Disconnect()
+                    _G.StaminaObserver = nil
+                end
+            end
+        end
+    })
+    
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+
+
+
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+
+    local Tab9 = Win:AddTab({
         Name = "Settings",
         Icon = "rbxassetid://7734053495"
     })
 
-    local Sec2 = Tab2:AddSection("⌨️ Keybind Open/Minimize UI", "ตั้งค่าปุ่มเปิด/ปิดหน้าจอ (Keybind)")
+    local Sec9 = Tab9:AddSection("⌨️ Keybind Open/Minimize UI", "ตั้งค่าปุ่มเปิด/ปิดหน้าจอ (Keybind)")
 
     -- 1. ตัว Toggle
-    Sec2:AddToggleSwitch({
+    Sec9:AddToggleSwitch({
         ID = "EnableBind_UI",
         Title = "Enable Keybind",
         Description = "เปิดใช้งานปุ่มเปิด/ปิดหน้าจอ",
@@ -123,7 +205,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddKeybind({
+    Sec9:AddKeybind({
         ID = "MenuBind",
         Title = "Keybind Open/Close",
         Default = Enum.KeyCode.G, 
@@ -144,7 +226,7 @@ local Win = XPHub:Window({
         end
     })
 
-    local Sec2 = Tab2:AddSection("⚙️ Configuration (Save/Load)", "ระบบบันทึก Config (Save/Load)")
+    local Sec9 = Tab9:AddSection("⚙️ Configuration (Save/Load)", "ระบบบันทึก Config (Save/Load)")
 
     -- [1] ย้ายตัวแปรสำคัญขึ้นมาประกาศไว้ด้านบนสุดของหน้า เพื่อให้ปุ่มทุกปุ่มมองเห็น
     local StatusLabel
@@ -153,7 +235,7 @@ local Win = XPHub:Window({
     local ConfigDropdown -- เตรียมไว้สำหรับรับค่าจาก AddDropdown
 
     -- [2] ส่วนกรอกชื่อไฟล์
-    Sec2:AddInput({
+    Sec9:AddInput({
         Title = "Config Name",
         Description = "พิมพ์ชื่อที่ต้องการบันทึกใหม่",
         Placeholder = "เช่น ProFarm_V1",
@@ -162,7 +244,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Create Config",
         Description = "บันทึกการตั้งค่าปัจจุบันลงไฟล์ใหม่",
         ButtonText = "Create New",
@@ -178,7 +260,7 @@ local Win = XPHub:Window({
     })
 
     -- [4] Dropdown แสดงรายชื่อไฟล์ (กำหนดค่าเข้าตัวแปร ConfigDropdown ที่ประกาศไว้ด้านบน)
-    ConfigDropdown = Sec2:AddDropdown({
+    ConfigDropdown = Sec9:AddDropdown({
         Title = "Config List",
         Description = "เลือกไฟล์ที่ต้องการจัดการ",
         Options = XPHub:GetConfigList(),
@@ -189,7 +271,7 @@ local Win = XPHub:Window({
     })
     
     -- [5] แผงปุ่มจัดการไฟล์ที่เลือก
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Overwrite Config",
         Description = "เซฟทับไฟล์ที่เลือกอยู่ใน List",
         ButtonText = "Overwrite",
@@ -201,7 +283,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Load Config",
         Description = "ดึงค่าจากไฟล์มาใช้งาน",
         ButtonText = "Load",
@@ -214,7 +296,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Set as Autoload",
         Description = "ตั้งให้โหลดไฟล์นี้ทุกครั้งที่รันสคริปต์",
         ButtonText = "Set Auto",
@@ -227,7 +309,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Reset Autoload",
         Description = "ยกเลิกการโหลดอัตโนมัติ",
         ButtonText = "Reset",
@@ -238,7 +320,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Delete Config",
         ButtonText = "Delete",
         Callback = function()
@@ -256,7 +338,7 @@ local Win = XPHub:Window({
         end
     })
 
-    StatusLabel = Sec2:AddLabel("Current Autoload: " .. (XPHub:GetAutoload() or "None"))
+    StatusLabel = Sec9:AddLabel("Current Autoload: " .. (XPHub:GetAutoload() or "None"))
 
 -- ### ส่วนล่าง: ระบบ Autoload ตอนเริ่มสคริปต์ ###
 task.spawn(function()
