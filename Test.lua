@@ -122,64 +122,57 @@ function XPHub:SetAutoload(name) writefile(AutoloadPath, name) end
 function XPHub:GetAutoload() return isfile(AutoloadPath) and readfile(AutoloadPath) or nil end
 function XPHub:ResetAutoload() if isfile(AutoloadPath) then delfile(AutoloadPath) end end
 
+XPHub.CleanupTasks = {} -- ตะกร้าสำหรับเก็บฟังก์ชันหยุดการทำงานต่างๆ
+
 local function ResetAllSettings()
-    -- วนลูปตาม IDs ทั้งหมดที่บันทึกไว้ใน Objects
-    for id, obj in pairs(XPHub.Objects) do
-        
-        -- 1. จัดการส่วน Keybind (ต้องสั่งหยุดการดักฟังปุ่มทันที)
-        if obj.Type == "Keybind" then
+    -- 1. รันงานที่ฝากไว้ใน CleanupTasks (เช่น สั่งปิด Stamina, Loop ฟาร์ม ฯลฯ)
+    if XPHub.CleanupTasks then
+        for _, task in ipairs(XPHub.CleanupTasks) do
             pcall(function()
-                -- ถ้ามีฟังก์ชัน Stop ให้รันเพื่อตัด Connection
-                if obj.Stop then
-                    obj.Stop()
-                -- กรณีไม่ได้ใช้โครงสร้าง Stop ให้ลองตัด Connection ตรงๆ (แผนสำรอง)
-                elseif obj.Connection then
-                    obj.Connection:Disconnect()
+                if type(task) == "function" then
+                    task()
                 end
             end)
-            -- เมื่อหยุด Keybind แล้ว ให้ข้ามไปทำไอเทมตัวถัดไปในลูปทันที
+        end
+        table.clear(XPHub.CleanupTasks) -- ล้างงานออกให้หมดหลังจากรันเสร็จ
+    end
+
+    -- 2. วนลูปจัดการ Objects (Toggle, Slider, Keybind) ที่ลงทะเบียนไว้
+    for id, obj in pairs(XPHub.Objects) do
+        
+        -- จัดการ Keybind (ตัด Connection ทันที)
+        if obj.Type == "Keybind" then
+            pcall(function()
+                if obj.Stop then obj.Stop()
+                elseif obj.Connection then obj.Connection:Disconnect() end
+            end)
             continue 
         end
 
-        -- 2. จัดการส่วน Component อื่นๆ (Toggle, Slider, Dropdown, Input)
+        -- จัดการ Component อื่นๆ (ส่งค่า Default กลับไปเพื่อคืนค่าในเกม)
         if obj.Callback then
             local defaultValue = nil
             
-            -- กำหนดค่าเริ่มต้นตามประเภทของ Component เพื่อ Reset ระบบเกม
             if obj.Type == "Slider" then
-                -- Reset กลับไปค่าต่ำสุดที่ตั้งไว้
-                defaultValue = (obj.Config and obj.Config.Min) or 0
+                defaultValue = (obj.Config and obj.Config.Default) or (obj.Config and obj.Config.Min) or 0
             elseif obj.Type == "Toggle" then
-                -- ปิดฟังก์ชันการทำงานทั้งหมด
                 defaultValue = false
             elseif obj.Type == "Dropdown" then
-                -- ป้องกัน Error 'concat' โดยคืนค่าเป็นข้อความว่าง หรือค่า Default
                 defaultValue = obj.Default or ""
             elseif obj.Type == "Input" then
                 defaultValue = ""
             end
             
-            -- สั่งรัน Callback เพื่อคืนค่าในเกม (เช่น คืนค่า WalkSpeed เป็น 16)
             if defaultValue ~= nil then
-                -- ใช้ task.spawn เพื่อให้การ Reset แต่ละตัวไม่ขัดจังหวะกัน
                 task.spawn(function()
-                    -- pcall ป้องกันกรณี Error หากฟังก์ชัน Callback อ้างอิงถึงสิ่งที่ถูกลบไปแล้ว
-                    pcall(function()
-                        obj.Callback(defaultValue)
-                    end)
-                end)
-            end
-            
-            -- อัปเดตหน้าตา UI ให้กลับไปจุดเริ่มต้น (ถ้า UI ยังไม่โดน Destroy)
-            if obj.Update then
-                pcall(function()
-                    obj.Update(defaultValue)
+                    pcall(function() obj.Callback(defaultValue) end)
+                    if obj.Update then pcall(function() obj.Update(defaultValue) end) end
                 end)
             end
         end
     end
     
-    print("Kill Switch: ทุกระบบถูก Reset และตัดการเชื่อมต่อ Keybind เรียบร้อยแล้ว")
+    warn("Kill Switch: [XP Hub] ทุกระบบถูก Reset และตัดการเชื่อมต่อเรียบร้อยแล้ว")
 end
 
 -- ธีมสีหลัก Windows XP
@@ -217,6 +210,10 @@ local SizeItem = {
     TitleItem = UDim2.new(0.980, 0, 0, 45)
 }
 
+local FontSize = {
+    TitleSize = 16,
+    SubTitleSize = 14,
+}
 -- ฟังก์ชันปิด Dropdown ทั้งหมด
 local function CloseAllDropdowns()
     if activeDropdownList then
@@ -781,25 +778,27 @@ local MainCorner = Instance.new("UICorner")
             end
             window.CountTab = window.CountTab + 1
 
+
+
             function tab:AddSection(Title, Description, IconID)
                 local sectionItems = {}
                 local SectionFrame = Instance.new("Frame")
-                SectionFrame.Size = UDim2.new(0.98, 0, 0, 60) -- ขนาดเริ่มต้นเล็กๆ เดี๋ยว AutomaticSize จะปรับเอง
+                SectionFrame.Size = UDim2.new(0.98, 0, 0, 60)
                 SectionFrame.BackgroundTransparency = 1
                 SectionFrame.ZIndex = 5
-                SectionFrame.ClipsDescendants = false -- เปลี่ยนเป็น false เพื่อให้ Effect บางอย่างล้นได้ถ้าจำเป็น
+                SectionFrame.ClipsDescendants = false 
                 tab.CountSection = tab.CountSection + 1
                 SectionFrame.LayoutOrder = tab.CountSection
                 SectionFrame.Parent = Page
                 
                 local SectionLayout = Instance.new("UIListLayout")
-                SectionLayout.Padding = UDim.new(0, 5) -- เพิ่ม Padding ระหว่าง Sections ให้ดูไม่แน่นเกินไป
+                SectionLayout.Padding = UDim.new(0, 5)
                 SectionLayout.Parent = SectionFrame
 
-                -- ### ส่วนหัว Section ที่ปรับปรุงใหม่ให้โดดเด่น ###
+                -- ### ส่วนหัว Section ###
                 local HeaderContainer = Instance.new("Frame")
                 HeaderContainer.Size = SizeItem.TitleItem
-                HeaderContainer.BackgroundColor3 = Color3.fromRGB(220, 225, 235) -- สีฟ้าอ่อนๆ สไตล์ XP Task Pane
+                HeaderContainer.BackgroundColor3 = Color3.fromRGB(220, 225, 235)
                 HeaderContainer.BorderSizePixel = 0
                 HeaderContainer.ZIndex = 6
                 HeaderContainer.Parent = SectionFrame
@@ -807,17 +806,23 @@ local MainCorner = Instance.new("UICorner")
                 local HeaderCorner = Instance.new("UICorner", HeaderContainer)
                 HeaderCorner.CornerRadius = UDim.new(0, 6)
                 
-                -- เส้นขอบให้ดูนูน (XP Style)
                 local HeaderStroke = Instance.new("UIStroke", HeaderContainer)
                 HeaderStroke.Color = Colors.TitleBarLight
                 HeaderStroke.Thickness = 1.2
                 HeaderStroke.Transparency = 0.5
 
-                -- Icon ของ Section
+                -- [เพิ่ม UIListLayout เพื่อจัดกึ่งกลาง]
+                local HeaderContentLayout = Instance.new("UIListLayout")
+                HeaderContentLayout.FillDirection = Enum.FillDirection.Vertical -- เรียงบนลงล่าง
+                HeaderContentLayout.VerticalAlignment = Enum.VerticalAlignment.Center -- จัดกึ่งกลางแนวตั้ง
+                HeaderContentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center -- จัดกึ่งกลางแนวนอน
+                HeaderContentLayout.Padding = UDim.new(0, 2) -- ระยะห่างระหว่าง Title กับ Description
+                HeaderContentLayout.Parent = HeaderContainer
+
+                -- Icon ของ Section (ถ้ามี)
                 if IconID then
                     local SecIcon = Instance.new("ImageLabel")
-                    SecIcon.Size = UDim2.new(0, 24, 0, 24)
-                    SecIcon.Position = UDim2.new(0, 10, 0.5, -12)
+                    SecIcon.Size = UDim2.new(0, 20, 0, 20) -- ปรับขนาดเล็กน้อยให้พอดี
                     SecIcon.Image = IconID
                     SecIcon.BackgroundTransparency = 1
                     SecIcon.ImageColor3 = Colors.TitleBarDark
@@ -826,30 +831,98 @@ local MainCorner = Instance.new("UICorner")
                 end
 
                 local HeaderTitle = Instance.new("TextLabel")
-                HeaderTitle.Size = UDim2.new(1, -50, 0, 24)
-                HeaderTitle.Position = IconID and UDim2.new(0, 40, 0, 5) or UDim2.new(0, 12, 0, 5)
+                HeaderTitle.Size = UDim2.new(1, 0, 0, 20) -- ปรับความกว้างเป็น 1 (เต็ม Container)
                 HeaderTitle.Text = Title
                 HeaderTitle.Font = Enum.Font.ArialBold
-                HeaderTitle.TextSize = 18
-                HeaderTitle.TextColor3 = Colors.TitleBarDark -- ใช้สีน้ำเงินเข้มให้ดูเป็นหัวข้อหลัก
-                HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+                HeaderTitle.TextSize = 16
+                HeaderTitle.TextColor3 = Colors.TitleBarDark
+                HeaderTitle.TextXAlignment = Enum.TextXAlignment.Center -- จัดตัวอักษรให้อยู่กลาง Label
                 HeaderTitle.BackgroundTransparency = 1
                 HeaderTitle.ZIndex = 7
                 HeaderTitle.Parent = HeaderContainer
 
                 if Description then
                     local Desc = Instance.new("TextLabel")
-                    Desc.Size = UDim2.new(1, -50, 0, 15)
-                    Desc.Position = IconID and UDim2.new(0, 40, 0, 25) or UDim2.new(0, 12, 0, 25)
+                    Desc.Size = UDim2.new(1, 0, 0, 14) -- ปรับความกว้างเป็น 1
                     Desc.Text = Description
                     Desc.Font = Enum.Font.Arial
                     Desc.TextSize = 12
                     Desc.TextColor3 = Colors.SubText
-                    Desc.TextXAlignment = Enum.TextXAlignment.Left
+                    Desc.TextXAlignment = Enum.TextXAlignment.Center -- จัดตัวอักษรให้อยู่กลาง Label
                     Desc.BackgroundTransparency = 1
                     Desc.ZIndex = 7
                     Desc.Parent = HeaderContainer
                 end
+
+            -- function tab:AddSection(Title, Description, IconID)
+            --     local sectionItems = {}
+            --     local SectionFrame = Instance.new("Frame")
+            --     SectionFrame.Size = UDim2.new(0.98, 0, 0, 60) -- ขนาดเริ่มต้นเล็กๆ เดี๋ยว AutomaticSize จะปรับเอง
+            --     SectionFrame.BackgroundTransparency = 1
+            --     SectionFrame.ZIndex = 5
+            --     SectionFrame.ClipsDescendants = false -- เปลี่ยนเป็น false เพื่อให้ Effect บางอย่างล้นได้ถ้าจำเป็น
+            --     tab.CountSection = tab.CountSection + 1
+            --     SectionFrame.LayoutOrder = tab.CountSection
+            --     SectionFrame.Parent = Page
+                
+            --     local SectionLayout = Instance.new("UIListLayout")
+            --     SectionLayout.Padding = UDim.new(0, 5) -- เพิ่ม Padding ระหว่าง Sections ให้ดูไม่แน่นเกินไป
+            --     SectionLayout.Parent = SectionFrame
+
+            --     -- ### ส่วนหัว Section ที่ปรับปรุงใหม่ให้โดดเด่น ###
+            --     local HeaderContainer = Instance.new("Frame")
+            --     HeaderContainer.Size = SizeItem.TitleItem
+            --     HeaderContainer.BackgroundColor3 = Color3.fromRGB(220, 225, 235) -- สีฟ้าอ่อนๆ สไตล์ XP Task Pane
+            --     HeaderContainer.BorderSizePixel = 0
+            --     HeaderContainer.ZIndex = 6
+            --     HeaderContainer.Parent = SectionFrame
+                
+            --     local HeaderCorner = Instance.new("UICorner", HeaderContainer)
+            --     HeaderCorner.CornerRadius = UDim.new(0, 6)
+                
+            --     -- เส้นขอบให้ดูนูน (XP Style)
+            --     local HeaderStroke = Instance.new("UIStroke", HeaderContainer)
+            --     HeaderStroke.Color = Colors.TitleBarLight
+            --     HeaderStroke.Thickness = 1.2
+            --     HeaderStroke.Transparency = 0.5
+
+            --     -- Icon ของ Section
+            --     if IconID then
+            --         local SecIcon = Instance.new("ImageLabel")
+            --         SecIcon.Size = UDim2.new(0, 24, 0, 24)
+            --         SecIcon.Position = UDim2.new(0, 10, 0.5, -12)
+            --         SecIcon.Image = IconID
+            --         SecIcon.BackgroundTransparency = 1
+            --         SecIcon.ImageColor3 = Colors.TitleBarDark
+            --         SecIcon.ZIndex = 7
+            --         SecIcon.Parent = HeaderContainer
+            --     end
+
+            --     local HeaderTitle = Instance.new("TextLabel")
+            --     HeaderTitle.Size = UDim2.new(1, -50, 0, 24)
+            --     HeaderTitle.Position = IconID and UDim2.new(0, 40, 0, 5) or UDim2.new(0, 12, 0, 5)
+            --     HeaderTitle.Text = Title
+            --     HeaderTitle.Font = Enum.Font.ArialBold
+            --     HeaderTitle.TextSize = 18
+            --     HeaderTitle.TextColor3 = Colors.TitleBarDark -- ใช้สีน้ำเงินเข้มให้ดูเป็นหัวข้อหลัก
+            --     HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+            --     HeaderTitle.BackgroundTransparency = 1
+            --     HeaderTitle.ZIndex = 7
+            --     HeaderTitle.Parent = HeaderContainer
+
+            --     if Description then
+            --         local Desc = Instance.new("TextLabel")
+            --         Desc.Size = UDim2.new(1, -50, 0, 15)
+            --         Desc.Position = IconID and UDim2.new(0, 40, 0, 25) or UDim2.new(0, 12, 0, 25)
+            --         Desc.Text = Description
+            --         Desc.Font = Enum.Font.Arial
+            --         Desc.TextSize = 14
+            --         Desc.TextColor3 = Colors.SubText
+            --         Desc.TextXAlignment = Enum.TextXAlignment.Left
+            --         Desc.BackgroundTransparency = 1
+            --         Desc.ZIndex = 7
+            --         Desc.Parent = HeaderContainer
+            --     end
 
                 -- ปรับขนาด SectionFrame อัตโนมัติ
                 SectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -872,7 +945,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -80, 0, 24)
                     TTitle.Position = UDim2.new(0, 15, 0, 10)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
                     TTitle.ZIndex = 8
@@ -883,7 +956,7 @@ local MainCorner = Instance.new("UICorner")
                     TDesc.Size = UDim2.new(1, -80, 0, 20)
                     TDesc.Position = UDim2.new(0, 15, 0, 32)
                     TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
+                    TDesc.TextSize = FontSize.SubTitleSize
                     TDesc.TextColor3 = Colors.SubText
                     TDesc.TextXAlignment = Enum.TextXAlignment.Left
                     TDesc.BackgroundTransparency = 1
@@ -954,7 +1027,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -160, 0, 24)
                     TTitle.Position = UDim2.new(0, 15, 0, 12)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextColor3 = Colors.Text
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
@@ -966,7 +1039,7 @@ local MainCorner = Instance.new("UICorner")
                     TDesc.Size = UDim2.new(1, -160, 0, 20)
                     TDesc.Position = UDim2.new(0, 15, 0, 34)
                     TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
+                    TDesc.TextSize = FontSize.SubTitleSize
                     TDesc.TextColor3 = Colors.SubText
                     TDesc.TextXAlignment = Enum.TextXAlignment.Left
                     TDesc.BackgroundTransparency = 1
@@ -1100,7 +1173,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -210, 0, 24)
                     TTitle.Position = UDim2.new(0, 15, 0, 12)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextColor3 = Colors.Text
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
@@ -1112,7 +1185,7 @@ local MainCorner = Instance.new("UICorner")
                     TDesc.Size = UDim2.new(1, -210, 0, 20)
                     TDesc.Position = UDim2.new(0, 15, 0, 34)
                     TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
+                    TDesc.TextSize = FontSize.SubTitleSize
                     TDesc.TextColor3 = Colors.SubText
                     TDesc.TextXAlignment = Enum.TextXAlignment.Left
                     TDesc.BackgroundTransparency = 1
@@ -1312,7 +1385,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -210, 0, 24)
                     TTitle.Position = UDim2.new(0, 15, 0, 12)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextColor3 = Colors.Text
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
@@ -1324,7 +1397,7 @@ local MainCorner = Instance.new("UICorner")
                     TDesc.Size = UDim2.new(1, -210, 0, 20)
                     TDesc.Position = UDim2.new(0, 15, 0, 34)
                     TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
+                    TDesc.TextSize = FontSize.SubTitleSize
                     TDesc.TextColor3 = Colors.SubText
                     TDesc.TextXAlignment = Enum.TextXAlignment.Left
                     TDesc.BackgroundTransparency = 1
@@ -1529,7 +1602,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -160, 0, 24)
                     TTitle.Position = UDim2.new(0, 15, 0, 12)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextColor3 = Colors.Text
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
@@ -1541,7 +1614,7 @@ local MainCorner = Instance.new("UICorner")
                     TDesc.Size = UDim2.new(1, -160, 0, 20)
                     TDesc.Position = UDim2.new(0, 15, 0, 34)
                     TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
+                    TDesc.TextSize = FontSize.SubTitleSize
                     TDesc.TextColor3 = Colors.SubText
                     TDesc.TextXAlignment = Enum.TextXAlignment.Left
                     TDesc.BackgroundTransparency = 1
@@ -1613,7 +1686,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -160, 0, 24)
                     TTitle.Position = UDim2.new(0, 15, 0, 12)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextColor3 = Colors.Text
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
@@ -1625,7 +1698,7 @@ local MainCorner = Instance.new("UICorner")
                     TDesc.Size = UDim2.new(1, -160, 0, 20)
                     TDesc.Position = UDim2.new(0, 15, 0, 34)
                     TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
+                    TDesc.TextSize = FontSize.SubTitleSize
                     TDesc.TextColor3 = Colors.SubText
                     TDesc.TextXAlignment = Enum.TextXAlignment.Left
                     TDesc.BackgroundTransparency = 1
@@ -1760,7 +1833,7 @@ local MainCorner = Instance.new("UICorner")
                     TTitle.Size = UDim2.new(1, -120, 1, 0)
                     TTitle.Position = UDim2.new(0, 15, 0, 0)
                     TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
+                    TTitle.TextSize = FontSize.TitleSize
                     TTitle.TextColor3 = Colors.Text
                     TTitle.TextXAlignment = Enum.TextXAlignment.Left
                     TTitle.BackgroundTransparency = 1
@@ -1778,7 +1851,7 @@ local MainCorner = Instance.new("UICorner")
                     -- แสดงผลแค่ชื่อปุ่ม เช่น [ G ] หรือ [ ... ] ถ้าไม่มีค่า
                     BindButton.Text = currentKey and "[" .. currentKey.Name .. "]" or "[ ... ]"
                     BindButton.Font = Enum.Font.ArialBold
-                    BindButton.TextSize = 14
+                    BindButton.TextSize = FontSize.SubTitleSize
                     BindButton.TextColor3 = Colors.Text
                     BindButton.ZIndex = 9
                     BindButton.Parent = Row
@@ -1894,9 +1967,24 @@ local MainCorner = Instance.new("UICorner")
         end)
         return window
     end
-    
 
-local allowedMaps = {168556275, 123456789} -- ใส่รหัสแมพที่คุณต้องการที่นี่
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- ####### เริ่มใช้งาน XP Hub Premium API #######
+
+local allowedMaps = {168556275, 77747658251236, 70845479499574} -- ใส่รหัสแมพที่คุณต้องการที่นี่
 if not XPHub:CheckPlaceId(allowedMaps) then 
     return -- ถ้าแมพไม่ตรง สคริปต์จะหยุดทำงานทันที (และโดน Kick ตามเงื่อนไขใน Lib)
 end
@@ -1909,10 +1997,10 @@ local Win = XPHub:Window({
 
     -- ตัวอย่างการเรียกใช้งาน
     local Tab1 = Win:AddTab({
-        Name = "Dashboard",
+        Name = "General",
         Icon = "rbxassetid://7733960981" -- ใส่ ID ของ Icon ที่คุณต้องการ
     })
-    local Sec1 = Tab1:AddSection("🔥 General", "ปรับปรุงระบบโครงสร้างใหม่")
+    local Sec1 = Tab1:AddSection("🔥 General", "Automation")
 
     Sec1:AddDropdown({
         ID = "TargetNPC", -- เพิ่ม ID
@@ -1998,26 +2086,338 @@ local Win = XPHub:Window({
     })
 
     ------------------------------------------------------- Tab 2 -------------------------------------------------------
-
     local Tab2 = Win:AddTab({
+        Name = "Player",
+        Icon = "rbxassetid://7734053495"
+    })
+
+    local Sec2 = Tab2:AddSection("👤 Player Modifications", "ปรับแต่งตัวละคร")
+
+    Sec2:AddToggleSwitch({
+        ID = "Infinite_Stamina", 
+        Title = "Infinite Stamina",
+        Description = "ล็อค Stamina ไว้ที่ Infinity (ไม่ลดแน่นอน 100%)",
+        Default = false,
+        Callback = function(v)
+            _G.StaminaToggled = v 
+
+            -- [[ ฟังก์ชันสำหรับหยุดการทำงาน (ฝากไว้ในตะกร้า Cleanup) ]]
+            local function stopStamina()
+                _G.StaminaToggled = false
+                if _G.StaminaLoop then 
+                    _G.StaminaLoop:Disconnect() 
+                    _G.StaminaLoop = nil 
+                end
+            end
+
+            if v then
+                -- ฝากฟังก์ชันหยุดไว้ในตะกร้าของ Library
+                table.insert(XPHub.CleanupTasks, stopStamina)
+
+                -- ล้าง Loop เก่าถ้ามีค้างอยู่
+                if _G.StaminaLoop then _G.StaminaLoop:Disconnect() end
+
+                -- ใช้ Heartbeat เพื่อล็อคค่า Stamina ไว้ที่ math.huge ทุกเฟรม
+                _G.StaminaLoop = RunService.Heartbeat:Connect(function()
+                    -- ถ้า Toggle ถูกปิด (รวมถึงจาก ResetAllSettings) ให้หยุดทำงาน
+                    if not _G.StaminaToggled then 
+                        stopStamina()
+                        return 
+                    end
+
+                    local char = LocalPlayer.Character
+                    if char then
+                        local team = LocalPlayer:GetAttribute("TEAM")
+                        -- ข้ามการทำงานถ้าอยู่ใน Lobby
+                        if team == "Lobby" or not team then return end
+
+                        -- บังคับค่า Stamina เป็น Infinity (math.huge)
+                        if char:GetAttribute("Stamina") ~= math.huge then
+                            char:SetAttribute("Stamina", math.huge)
+                        end
+
+                        -- บังคับสถานะการวิ่งให้เปิดอยู่ตลอด
+                        if char:GetAttribute("Running") ~= true then
+                            char:SetAttribute("Running", true)
+                        end
+                    end
+                end)
+            else
+                -- เมื่อผู้ใช้กดปิด Toggle เอง
+                stopStamina()
+            end
+        end
+    })
+    
+------------------------------------------------------- Tab 3 (Visuals) -------------------------------------------------------
+    local Tab3 = Win:AddTab({
+        Name = "Visuals",
+        Icon = "rbxassetid://7743875317"
+    })
+
+    local Sec3 = Tab3:AddSection("👁️ ESP Settings", "มองทะลุผู้เล่น")
+
+    -- [[ 1. เตรียมข้อมูลและสถานะกลาง ]]
+    _G.ESP_Settings = {
+        Survivor = false,
+        Killer = false,
+        NameRole = false,
+        Health = false,
+        Stamina = false
+    }
+
+    local function formatClass(fullClass)
+        if not fullClass or fullClass == "" then return "Unknown" end
+        return fullClass:gsub("Survivor%-", "")
+    end
+
+    local function getHealth(char)
+        return char:GetAttribute("Health") or (char:FindFirstChild("Humanoid") and char.Humanoid.Health) or 100
+    end
+
+    local ESPLoop = nil
+
+    -- [[ 2. ฟังก์ชัน STOP ESP (สำหรับ Cleanup) ]]
+    local function stopESPSystem()
+        if ESPLoop then ESPLoop:Disconnect() ESPLoop = nil end
+        for _, folderName in pairs({"ALIVE", "KILLER", "LOBBY"}) do
+            local f = workspace.PLAYERS:FindFirstChild(folderName)
+            if f then
+                for _, char in pairs(f:GetChildren()) do
+                    if char:FindFirstChild("XPHub_HL") then char.XPHub_HL:Destroy() end
+                    if char:FindFirstChild("XPHub_Gui") then char.XPHub_Gui:Destroy() end
+                end
+            end
+        end
+    end
+
+    -- [[ 3. ฟังก์ชันหลักในการวาด (Engine) ]]
+    local function updateESP()
+        local myTeam = LocalPlayer:GetAttribute("TEAM")
+        local myChar = LocalPlayer.Character
+
+        local paths = {
+            {Folder = "ALIVE", Type = "Survivor"},
+            {Folder = "KILLER", Type = "Killer"},
+            {Folder = "LOBBY", Type = "Lobby"}
+        }
+
+        for _, pathInfo in pairs(paths) do
+            local folder = workspace:FindFirstChild("PLAYERS") and workspace.PLAYERS:FindFirstChild(pathInfo.Folder)
+            if folder then
+                for _, char in pairs(folder:GetChildren()) do
+                    if char:IsA("Model") and char ~= myChar then
+                        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+                        if not hrp then continue end
+
+                        -- [A] ขอบสี (Highlight)
+                        local hl = char:FindFirstChild("XPHub_HL") or Instance.new("Highlight")
+                        if hl.Parent ~= char then hl.Name = "XPHub_HL" hl.Parent = char end
+
+                        
+-- [[ 2. UI บนหัว (BillboardGui) - Dynamic Height Version ]]
+                        local gui = char:FindFirstChild("XPHub_Gui") or Instance.new("BillboardGui")
+                        if gui.Parent ~= char then
+                            gui.Name = "XPHub_Gui"
+                            gui.Adornee = char:FindFirstChild("Head") or hrp
+                            gui.AlwaysOnTop = true
+                            gui.Size = UDim2.new(0, 100, 0, 50)
+                            gui.Parent = char
+                        end
+
+                        -- [[ จุดคำนวณความสูงตามระยะทาง (The Magic Part) ]]
+                        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if myHrp and hrp then
+                            -- 1. คำนวณระยะห่าง (Distance)
+                            local distance = (myHrp.Position - hrp.Position).Magnitude
+                            
+                            -- 2. ตั้งค่าความสูงเริ่มต้น (Base Height) เช่น 2.5 Studs
+                            local baseHeight = 2.5
+                            
+                            -- 3. เพิ่มความสูงตามระยะทาง (Dynamic Boost) 
+                            -- สูตร: ทุกๆ 100 Studs จะลอยสูงขึ้นอีกประมาณ 1-2 Studs
+                            local dynamicBoost = (distance / 100) * 1.5 
+                            
+                            -- 4. สั่ง Update Offset (ใช้ StudsOffset เพื่อให้ขยับตามระยะทางทันที)
+                            gui.StudsOffset = Vector3.new(0, baseHeight + dynamicBoost, 0)
+                        end
+
+                        local main = gui:FindFirstChild("Main") or Instance.new("Frame", gui)
+                        if main.Name ~= "Main" then
+                            main.Name = "Main"
+                            main.Size = UDim2.new(1, 0, 1, 0)
+                            main.BackgroundTransparency = 1
+                            -- ล็อค AnchorPoint ไว้ที่ฐานเพื่อให้การลอยดูสมูท
+                            main.AnchorPoint = Vector2.new(0.5, 1)
+                            main.Position = UDim2.new(0.5, 0, 1, 0)
+                            
+                            local layout = main:FindFirstChildOfClass("UIListLayout") or Instance.new("UIListLayout", main)
+                            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
+                            layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                            layout.Padding = UDim.new(0, 2)
+                            layout.SortOrder = Enum.SortOrder.LayoutOrder
+                        end
+
+                        local main = gui:FindFirstChild("Main") or Instance.new("Frame", gui)
+                        if main.Name ~= "Main" then
+                            main.Name = "Main"
+                            -- ให้ Main กินพื้นที่แค่พอดี และอยู่ชิดขอบล่างของกรอบ Billboard
+                            main.Size = UDim2.new(1, 0, 1, 0)
+                            main.BackgroundTransparency = 1
+                            
+                            local layout = Instance.new("UIListLayout", main)
+                            -- บังคับให้เรียง "ขึ้นข้างบน" จากจุดยึดที่หัว
+                            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
+                            layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                            layout.Padding = UDim.new(0, 2)
+                            layout.SortOrder = Enum.SortOrder.LayoutOrder
+                        end
+                        -- [C] ตรรกะแสดงผลสี
+                        local visible = false
+                        local color = Color3.fromRGB(255, 255, 255)
+
+                        if pathInfo.Type == "Survivor" or pathInfo.Type == "Lobby" then
+                            if _G.ESP_Settings.Survivor then
+                                if myTeam == "Survivor" or myTeam == "Lobby" or not myTeam then 
+                                    visible, color = true, Color3.fromRGB(0, 255, 0)
+                                elseif myTeam == "Killer" then 
+                                    visible, color = true, Color3.fromRGB(255, 0, 0) 
+                                end
+                            end
+                        elseif pathInfo.Type == "Killer" then
+                            if _G.ESP_Settings.Killer then visible, color = true, Color3.fromRGB(255, 0, 0) end
+                        end
+
+                        if (myTeam == "Survivor" or myTeam == "Killer") and pathInfo.Folder == "LOBBY" then visible = false end
+
+                        hl.Enabled = visible
+                        hl.FillColor = color
+                        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        gui.Enabled = visible
+
+                        if visible then
+                            -- 1. ชื่อ (Name & Role) ย้ายไปไว้บนสุด (LayoutOrder ต่ำสุด)
+                            local nameTag = main:FindFirstChild("NameTag") or Instance.new("TextLabel", main)
+                            if nameTag.Name ~= "NameTag" then
+                                nameTag.Name = "NameTag"
+                                nameTag.Size = UDim2.new(1, 0, 0, 16)
+                                nameTag.BackgroundTransparency = 1
+                                nameTag.Font = Enum.Font.SourceSansBold
+                                nameTag.TextSize = 13
+                                nameTag.TextStrokeTransparency = 0
+                                nameTag.LayoutOrder = 1 -- อยู่บนสุด
+                            end
+                            nameTag.Visible = _G.ESP_Settings.NameRole
+                            if _G.ESP_Settings.NameRole then
+                                local rawClass = char:GetAttribute("Character") or "None"
+                                nameTag.Text = char.Name .. " [" .. (pathInfo.Type == "Killer" and rawClass or formatClass(rawClass)) .. "]"
+                                nameTag.TextColor3 = color
+                            end
+
+                            -- ฟังก์ชันช่วยสร้างหลอด (แบบมีตัวเลขข้างใน)
+                            local function updateBar(barName, barColor, current, max, isSettingOn, order, prefix)
+                                local bar = main:FindFirstChild(barName) or Instance.new("Frame", main)
+                                if bar.Name ~= barName then
+                                    bar.Name = barName
+                                    bar.Size = UDim2.new(0.8, 0, 0, 11) -- สั้นลงนิดนึง (0.8)
+                                    bar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                                    bar.BackgroundTransparency = 0.5
+                                    bar.BorderSizePixel = 0
+                                    bar.LayoutOrder = order
+                                    
+                                    local f = Instance.new("Frame", bar)
+                                    f.Name = "Fill"
+                                    f.Size = UDim2.new(1, 0, 1, 0)
+                                    f.BackgroundColor3 = barColor
+                                    f.BorderSizePixel = 0
+                                    f.ZIndex = 2
+
+                                    local txt = Instance.new("TextLabel", bar)
+                                    txt.Name = "ValText"
+                                    txt.Size = UDim2.new(1, 0, 1, 0)
+                                    txt.BackgroundTransparency = 1
+                                    txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+                                    txt.TextStrokeTransparency = 0
+                                    txt.Font = Enum.Font.SourceSansBold
+                                    txt.TextSize = 10
+                                    txt.ZIndex = 3
+                                end
+                                bar.Visible = isSettingOn
+                                if isSettingOn then
+                                    local val = math.floor(current)
+                                    local mx = math.floor(max)
+                                    bar.Fill.Size = UDim2.new(math.clamp(val/mx, 0, 1), 0, 1, 0)
+                                    bar.ValText.Text = (prefix == "HP:") and (prefix .. val .. "/" .. mx) or (prefix .. val)
+                                end
+                            end
+
+                            -- อัปเดตหลอด (ลำดับที่ 2 และ 3)
+                            updateBar("HPBar", Color3.fromRGB(0, 255, 0), getHealth(char), 100, _G.ESP_Settings.Health, 2, "HP:")
+                            updateBar("StamBar", Color3.fromRGB(0, 170, 255), char:GetAttribute("Stamina") or 0, char:GetAttribute("MaxStamina") or 100, _G.ESP_Settings.Stamina, 3, "STM:")
+                        end
+                    elseif char == myChar then
+                        if char:FindFirstChild("XPHub_HL") then char.XPHub_HL:Destroy() end
+                        if char:FindFirstChild("XPHub_Gui") then char.XPHub_Gui:Destroy() end
+                    end
+                end
+            end
+        end
+    end
+
+    -- [[ 4. เริ่มต้นระบบ Loop ]]
+    ESPLoop = game:GetService("RunService").Heartbeat:Connect(updateESP)
+    table.insert(XPHub.CleanupTasks, stopESPSystem)
+
+    -- [[ 5. สร้างปุ่ม Toggle ]]
+    Sec3:AddToggleSwitch({
+        ID = "Survivor_ESP", Title = "Survivor ESP", Description = "มองทะลุผู้รอดชีวิต",
+        Callback = function(v) _G.ESP_Settings.Survivor = v end
+    })
+    Sec3:AddToggleSwitch({
+        ID = "Killer_ESP", Title = "Killer ESP", Description = "มองทะลุฆาตกร",
+        Callback = function(v) _G.ESP_Settings.Killer = v end
+    })
+    Sec3:AddToggleSwitch({
+        ID = "Name_Role_ESP", Title = "Name & Role ESP", Description = "แสดงชื่อด้านบน",
+        Callback = function(v) _G.ESP_Settings.NameRole = v end
+    })
+    Sec3:AddToggleSwitch({
+        ID = "Health_ESP", Title = "Health ESP", Description = "แสดงหลอดเลือดพร้อมตัวเลข",
+        Callback = function(v) _G.ESP_Settings.Health = v end
+    })
+    Sec3:AddToggleSwitch({
+        ID = "Stamina_ESP", Title = "Stamina ESP", Description = "แสดงหลอด STM พร้อมตัวเลข",
+        Callback = function(v) _G.ESP_Settings.Stamina = v end
+    })
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+
+
+
+    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+
+    local Tab9 = Win:AddTab({
         Name = "Settings",
         Icon = "rbxassetid://7734053495"
     })
 
-    local Sec2 = Tab2:AddSection("⌨️ Keybind Open/Minimize UI", "ตั้งค่าปุ่มเปิด/ปิดหน้าจอ (Keybind)")
+    local Sec9 = Tab9:AddSection("⌨️ Keybind Open/Minimize UI", "ตั้งค่าปุ่มเปิด/ปิดหน้าจอ (Keybind)")
 
     -- 1. ตัว Toggle
-    Sec2:AddToggleSwitch({
+    Sec9:AddToggleSwitch({
         ID = "EnableBind_UI",
         Title = "Enable Keybind",
         Description = "เปิดใช้งานปุ่มเปิด/ปิดหน้าจอ",
-        Default = false,
+        Default = true,
         Callback = function(v) 
             -- ค่า v จะถูกเก็บเข้า XPHub.ConfigData["EnableBind_UI"] อัตโนมัติ
         end
     })
 
-    Sec2:AddKeybind({
+    Sec9:AddKeybind({
         ID = "MenuBind",
         Title = "Keybind Open/Close",
         Default = Enum.KeyCode.G, 
@@ -2038,7 +2438,7 @@ local Win = XPHub:Window({
         end
     })
 
-    local Sec2 = Tab2:AddSection("⚙️ Configuration (Save/Load)", "ระบบบันทึก Config (Save/Load)")
+    local Sec9 = Tab9:AddSection("⚙️ Configuration (Save/Load)", "ระบบบันทึก Config (Save/Load)")
 
     -- [1] ย้ายตัวแปรสำคัญขึ้นมาประกาศไว้ด้านบนสุดของหน้า เพื่อให้ปุ่มทุกปุ่มมองเห็น
     local StatusLabel
@@ -2047,7 +2447,7 @@ local Win = XPHub:Window({
     local ConfigDropdown -- เตรียมไว้สำหรับรับค่าจาก AddDropdown
 
     -- [2] ส่วนกรอกชื่อไฟล์
-    Sec2:AddInput({
+    Sec9:AddInput({
         Title = "Config Name",
         Description = "พิมพ์ชื่อที่ต้องการบันทึกใหม่",
         Placeholder = "เช่น ProFarm_V1",
@@ -2056,7 +2456,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Create Config",
         Description = "บันทึกการตั้งค่าปัจจุบันลงไฟล์ใหม่",
         ButtonText = "Create New",
@@ -2072,7 +2472,7 @@ local Win = XPHub:Window({
     })
 
     -- [4] Dropdown แสดงรายชื่อไฟล์ (กำหนดค่าเข้าตัวแปร ConfigDropdown ที่ประกาศไว้ด้านบน)
-    ConfigDropdown = Sec2:AddDropdown({
+    ConfigDropdown = Sec9:AddDropdown({
         Title = "Config List",
         Description = "เลือกไฟล์ที่ต้องการจัดการ",
         Options = XPHub:GetConfigList(),
@@ -2083,7 +2483,7 @@ local Win = XPHub:Window({
     })
     
     -- [5] แผงปุ่มจัดการไฟล์ที่เลือก
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Overwrite Config",
         Description = "เซฟทับไฟล์ที่เลือกอยู่ใน List",
         ButtonText = "Overwrite",
@@ -2095,7 +2495,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Load Config",
         Description = "ดึงค่าจากไฟล์มาใช้งาน",
         ButtonText = "Load",
@@ -2108,7 +2508,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Set as Autoload",
         Description = "ตั้งให้โหลดไฟล์นี้ทุกครั้งที่รันสคริปต์",
         ButtonText = "Set Auto",
@@ -2121,7 +2521,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Reset Autoload",
         Description = "ยกเลิกการโหลดอัตโนมัติ",
         ButtonText = "Reset",
@@ -2132,7 +2532,7 @@ local Win = XPHub:Window({
         end
     })
 
-    Sec2:AddButton({
+    Sec9:AddButton({
         Title = "Delete Config",
         ButtonText = "Delete",
         Callback = function()
@@ -2150,7 +2550,7 @@ local Win = XPHub:Window({
         end
     })
 
-    StatusLabel = Sec2:AddLabel("Current Autoload: " .. (XPHub:GetAutoload() or "None"))
+    StatusLabel = Sec9:AddLabel("Current Autoload: " .. (XPHub:GetAutoload() or "None"))
 
 -- ### ส่วนล่าง: ระบบ Autoload ตอนเริ่มสคริปต์ ###
 task.spawn(function()
