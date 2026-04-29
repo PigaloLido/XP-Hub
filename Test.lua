@@ -1997,98 +1997,98 @@ local Win = XPHub:Window({
 
     -- ตัวอย่างการเรียกใช้งาน
     local Tab1 = Win:AddTab({
-        Name = "General",
+        Name = "Automation",
         Icon = "rbxassetid://7733960981" -- ใส่ ID ของ Icon ที่คุณต้องการ
     })
-    local Sec1 = Tab1:AddSection("🔥 General", "Automation")
+    local Sec1 = Tab1:AddSection("🔥 Automation", "ทำงานอัตโนมัติ")
 
-    Sec1:AddDropdown({
-        ID = "TargetNPC", -- เพิ่ม ID
-        Title = "เลือกศัตรูเป้าหมาย",
-        Description = "เลือก NPC ที่ต้องการให้ระบบฟาร์มโจมตี",
-        Options = {"Monkey", "Gorilla", "Goden Sun", "Snowman", "Yeti", "Dragon", "Snowman2", "Yeti2", "Dragon2"},
-        Default = "Monkey",
-        Callback = function(v) print("Selected NPC:", v) end
-    })
+    -- Sec1:AddDropdown({
+    --     ID = "TargetNPC", -- เพิ่ม ID
+    --     Title = "เลือกศัตรูเป้าหมาย",
+    --     Description = "เลือก NPC ที่ต้องการให้ระบบฟาร์มโจมตี",
+    --     Options = {"Monkey", "Gorilla", "Goden Sun", "Snowman", "Yeti", "Dragon", "Snowman2", "Yeti2", "Dragon2"},
+    --     Default = "Monkey",
+    --     Callback = function(v) print("Selected NPC:", v) end
+    -- })
 
-    Sec1:AddMultiSelect({
-        ID = "SelectedItems", -- เพิ่ม ID
-        Title = "Select Items",
-        Description = "เลือกได้หลายรายการ",
-        Options = {"Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6", "Item 7", "Item 8"},
-        Default = {"Item 1"},
-        Callback = function(v) print("Current Selected:", table.concat(v, ", ")) end
-    })
+    -- Sec1:AddMultiSelect({
+    --     ID = "SelectedItems", -- เพิ่ม ID
+    --     Title = "Select Items",
+    --     Description = "เลือกได้หลายรายการ",
+    --     Options = {"Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6", "Item 7", "Item 8"},
+    --     Default = {"Item 1"},
+    --     Callback = function(v) print("Current Selected:", table.concat(v, ", ")) end
+    -- })
 
-    Sec1:AddToggleSwitch({
-        ID = "AutoFarm", -- เพิ่ม ID
-        Title = "Enable Farm",
-        Description = "ฟาร์มมอนสเตอร์ที่เลือกไว้",
-        Default = false,
-        Callback = function(v) end
-    })
+    -- Sec1:AddToggleSwitch({
+    --     ID = "AutoFarm", -- เพิ่ม ID
+    --     Title = "Enable Farm",
+    --     Description = "ฟาร์มมอนสเตอร์ที่เลือกไว้",
+    --     Default = false,
+    --     Callback = function(v) end
+    -- })
 
-    Sec1:AddSlider({
-        ID = "CharacterSpeed", -- เพิ่ม ID
-        Title = "WalkSpeed",
-        Description = "ปรับความเร็วในการเคลื่อนที่",
-        Min = 16,
-        Max = 300,
-        Default = 16,
-        Callback = function(v)
-            if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
-                game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v
-            end
-        end
-    })
+    -- Sec1:AddSlider({
+    --     ID = "CharacterSpeed", -- เพิ่ม ID
+    --     Title = "WalkSpeed",
+    --     Description = "ปรับความเร็วในการเคลื่อนที่",
+    --     Min = 16,
+    --     Max = 300,
+    --     Default = 16,
+    --     Callback = function(v)
+    --         if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
+    --             game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v
+    --         end
+    --     end
+    -- })
 
-    Sec1:AddSlider({
-        ID = "FieldOfView", -- เพิ่ม ID
-        Title = "Field of View",
-        Description = "ปรับระยะการมองเห็น (FOV)",
-        Min = 70,
-        Max = 120,
-        Default = 70,
-        Callback = function(v)
-            workspace.CurrentCamera.FieldOfView = v
-        end
-    })
+    -- Sec1:AddSlider({
+    --     ID = "FieldOfView", -- เพิ่ม ID
+    --     Title = "Field of View",
+    --     Description = "ปรับระยะการมองเห็น (FOV)",
+    --     Min = 70,
+    --     Max = 120,
+    --     Default = 70,
+    --     Callback = function(v)
+    --         workspace.CurrentCamera.FieldOfView = v
+    --     end
+    -- })
 
-    Sec1:AddInput({
-        ID = "WebhookURL", -- เพิ่ม ID
-        Title = "Webhook URL",
-        Description = "ใส่ URL สำหรับส่งข้อมูลไปยัง Discord",
-        Placeholder = "https://discord.com/api/...",
-        Callback = function(text, enter)
-            print("Webhook set to:", text)
-        end
-    })
+    -- Sec1:AddInput({
+    --     ID = "WebhookURL", -- เพิ่ม ID
+    --     Title = "Webhook URL",
+    --     Description = "ใส่ URL สำหรับส่งข้อมูลไปยัง Discord",
+    --     Placeholder = "https://discord.com/api/...",
+    --     Callback = function(text, enter)
+    --         print("Webhook set to:", text)
+    --     end
+    -- })
 
 
-    Sec1:AddButton({
-        Title = "Reset Character",
-        Description = "ฆ่าตัวตายเพื่อกลับจุดเกิด",
-        ButtonText = "Reset Now",
-        Callback = function()
-            game.Players.LocalPlayer.Character:BreakJoints()
-            print("ตัวละครถูกรีเซ็ตแล้ว")
-        end
-    })
+    -- Sec1:AddButton({
+    --     Title = "Reset Character",
+    --     Description = "ฆ่าตัวตายเพื่อกลับจุดเกิด",
+    --     ButtonText = "Reset Now",
+    --     Callback = function()
+    --         game.Players.LocalPlayer.Character:BreakJoints()
+    --         print("ตัวละครถูกรีเซ็ตแล้ว")
+    --     end
+    -- })
 
-    Sec1:AddButton({
-        Title = "Copy Job ID",
-        Description = "คัดลอกไอดีเซิร์ฟเวอร์ปัจจุบัน",
-        ButtonText = "Copy",
-        Callback = function()
-            setclipboard(game.JobId)
-            print("คัดลอก Job ID แล้ว!")
-        end
-    })
+    -- Sec1:AddButton({
+    --     Title = "Copy Job ID",
+    --     Description = "คัดลอกไอดีเซิร์ฟเวอร์ปัจจุบัน",
+    --     ButtonText = "Copy",
+    --     Callback = function()
+    --         setclipboard(game.JobId)
+    --         print("คัดลอก Job ID แล้ว!")
+    --     end
+    -- })
 
     ------------------------------------------------------- Tab 2 -------------------------------------------------------
     local Tab2 = Win:AddTab({
         Name = "Player",
-        Icon = "rbxassetid://7734053495"
+        Icon = "rbxassetid://117259180607823"
     })
 
     local Sec2 = Tab2:AddSection("👤 Player Modifications", "ปรับแต่งตัวละคร")
@@ -2152,10 +2152,10 @@ local Win = XPHub:Window({
 ------------------------------------------------------- Tab 3 (Visuals) -------------------------------------------------------
     local Tab3 = Win:AddTab({
         Name = "Visuals",
-        Icon = "rbxassetid://7743875317"
+        Icon = "rbxassetid://6523858394"
     })
 
-    local Sec3 = Tab3:AddSection("👁️ ESP Settings", "มองทะลุผู้เล่น")
+    local Sec3 = Tab3:AddSection("👁️ ESP Players", "มองทะลุผู้เล่น")
 
     -- [[ 1. เตรียมข้อมูลและสถานะกลาง ]]
     _G.ESP_Settings = {
@@ -2191,7 +2191,7 @@ local Win = XPHub:Window({
         end
     end
 
-    -- [[ 3. ฟังก์ชันหลักในการวาด (Engine) ]]
+    -- [[ ฟังก์ชันหลักในการวาด ESP (Big & Bold Version) ]]
     local function updateESP()
         local myTeam = LocalPlayer:GetAttribute("TEAM")
         local myChar = LocalPlayer.Character
@@ -2207,72 +2207,39 @@ local Win = XPHub:Window({
             if folder then
                 for _, char in pairs(folder:GetChildren()) do
                     if char:IsA("Model") and char ~= myChar then
-                        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
                         if not hrp then continue end
 
-                        -- [A] ขอบสี (Highlight)
+                        -- [1] จัดการ Highlight
                         local hl = char:FindFirstChild("XPHub_HL") or Instance.new("Highlight")
                         if hl.Parent ~= char then hl.Name = "XPHub_HL" hl.Parent = char end
 
-                        
--- [[ 2. UI บนหัว (BillboardGui) - Dynamic Height Version ]]
+                        -- [2] จัดการ BillboardGui (ปรับขนาดใหญ่ขึ้น)
                         local gui = char:FindFirstChild("XPHub_Gui") or Instance.new("BillboardGui")
                         if gui.Parent ~= char then
                             gui.Name = "XPHub_Gui"
                             gui.Adornee = char:FindFirstChild("Head") or hrp
                             gui.AlwaysOnTop = true
-                            gui.Size = UDim2.new(0, 100, 0, 50)
+                            
+                            -- [[ ปรับขนาดรวมให้ใหญ่ขึ้น ]]
+                            gui.Size = UDim2.new(5, 0, 2, 0) -- ขยายจาก 4 เป็น 5 และ 1.2 เป็น 2
+                            gui.StudsOffset = Vector3.new(0, 3.5, 0) -- ยกสูงขึ้นอีกนิดกันบังหัว
                             gui.Parent = char
                         end
 
-                        -- [[ จุดคำนวณความสูงตามระยะทาง (The Magic Part) ]]
-                        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                        if myHrp and hrp then
-                            -- 1. คำนวณระยะห่าง (Distance)
-                            local distance = (myHrp.Position - hrp.Position).Magnitude
-                            
-                            -- 2. ตั้งค่าความสูงเริ่มต้น (Base Height) เช่น 2.5 Studs
-                            local baseHeight = 2.5
-                            
-                            -- 3. เพิ่มความสูงตามระยะทาง (Dynamic Boost) 
-                            -- สูตร: ทุกๆ 100 Studs จะลอยสูงขึ้นอีกประมาณ 1-2 Studs
-                            local dynamicBoost = (distance / 100) * 1.5 
-                            
-                            -- 4. สั่ง Update Offset (ใช้ StudsOffset เพื่อให้ขยับตามระยะทางทันที)
-                            gui.StudsOffset = Vector3.new(0, baseHeight + dynamicBoost, 0)
-                        end
-
                         local main = gui:FindFirstChild("Main") or Instance.new("Frame", gui)
                         if main.Name ~= "Main" then
                             main.Name = "Main"
                             main.Size = UDim2.new(1, 0, 1, 0)
                             main.BackgroundTransparency = 1
-                            -- ล็อค AnchorPoint ไว้ที่ฐานเพื่อให้การลอยดูสมูท
-                            main.AnchorPoint = Vector2.new(0.5, 1)
-                            main.Position = UDim2.new(0.5, 0, 1, 0)
-                            
-                            local layout = main:FindFirstChildOfClass("UIListLayout") or Instance.new("UIListLayout", main)
-                            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
-                            layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-                            layout.Padding = UDim.new(0, 2)
-                            layout.SortOrder = Enum.SortOrder.LayoutOrder
-                        end
-
-                        local main = gui:FindFirstChild("Main") or Instance.new("Frame", gui)
-                        if main.Name ~= "Main" then
-                            main.Name = "Main"
-                            -- ให้ Main กินพื้นที่แค่พอดี และอยู่ชิดขอบล่างของกรอบ Billboard
-                            main.Size = UDim2.new(1, 0, 1, 0)
-                            main.BackgroundTransparency = 1
-                            
                             local layout = Instance.new("UIListLayout", main)
-                            -- บังคับให้เรียง "ขึ้นข้างบน" จากจุดยึดที่หัว
-                            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
+                            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
                             layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-                            layout.Padding = UDim.new(0, 2)
+                            layout.Padding = UDim.new(0, 0.05) 
                             layout.SortOrder = Enum.SortOrder.LayoutOrder
                         end
-                        -- [C] ตรรกะแสดงผลสี
+
+                        -- [3] ตรรกะสีและสถานะทีม
                         local visible = false
                         local color = Color3.fromRGB(255, 255, 255)
 
@@ -2292,20 +2259,21 @@ local Win = XPHub:Window({
 
                         hl.Enabled = visible
                         hl.FillColor = color
-                        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
                         gui.Enabled = visible
 
                         if visible then
-                            -- 1. ชื่อ (Name & Role) ย้ายไปไว้บนสุด (LayoutOrder ต่ำสุด)
+                            -- [4] วาดข้อมูล (เน้นความใหญ่)
+                            
+                            -- ชื่อผู้เล่น (ปรับขนาด Text ให้ใหญ่ขึ้น)
                             local nameTag = main:FindFirstChild("NameTag") or Instance.new("TextLabel", main)
                             if nameTag.Name ~= "NameTag" then
                                 nameTag.Name = "NameTag"
-                                nameTag.Size = UDim2.new(1, 0, 0, 16)
+                                nameTag.Size = UDim2.new(1, 0, 0.4, 0) -- ขยายพื้นที่ชื่อ
                                 nameTag.BackgroundTransparency = 1
                                 nameTag.Font = Enum.Font.SourceSansBold
-                                nameTag.TextSize = 13
+                                nameTag.TextScaled = true 
                                 nameTag.TextStrokeTransparency = 0
-                                nameTag.LayoutOrder = 1 -- อยู่บนสุด
+                                nameTag.LayoutOrder = 1
                             end
                             nameTag.Visible = _G.ESP_Settings.NameRole
                             if _G.ESP_Settings.NameRole then
@@ -2314,14 +2282,14 @@ local Win = XPHub:Window({
                                 nameTag.TextColor3 = color
                             end
 
-                            -- ฟังก์ชันช่วยสร้างหลอด (แบบมีตัวเลขข้างใน)
+                            -- ฟังก์ชันสร้างหลอด (ปรับความหนาของหลอด)
                             local function updateBar(barName, barColor, current, max, isSettingOn, order, prefix)
                                 local bar = main:FindFirstChild(barName) or Instance.new("Frame", main)
                                 if bar.Name ~= barName then
                                     bar.Name = barName
-                                    bar.Size = UDim2.new(0.8, 0, 0, 11) -- สั้นลงนิดนึง (0.8)
+                                    bar.Size = UDim2.new(0.9, 0, 0.25, 0) -- ขยายความยาวเป็น 0.9 และความหนาเป็น 0.25
                                     bar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                                    bar.BackgroundTransparency = 0.5
+                                    bar.BackgroundTransparency = 0.4
                                     bar.BorderSizePixel = 0
                                     bar.LayoutOrder = order
                                     
@@ -2339,7 +2307,7 @@ local Win = XPHub:Window({
                                     txt.TextColor3 = Color3.fromRGB(255, 255, 255)
                                     txt.TextStrokeTransparency = 0
                                     txt.Font = Enum.Font.SourceSansBold
-                                    txt.TextSize = 10
+                                    txt.TextScaled = true -- บังคับข้อความในหลอดให้ใหญ่เต็มหลอด
                                     txt.ZIndex = 3
                                 end
                                 bar.Visible = isSettingOn
@@ -2351,7 +2319,7 @@ local Win = XPHub:Window({
                                 end
                             end
 
-                            -- อัปเดตหลอด (ลำดับที่ 2 และ 3)
+                            -- ปรับปรุงลำดับและความหนา
                             updateBar("HPBar", Color3.fromRGB(0, 255, 0), getHealth(char), 100, _G.ESP_Settings.Health, 2, "HP:")
                             updateBar("StamBar", Color3.fromRGB(0, 170, 255), char:GetAttribute("Stamina") or 0, char:GetAttribute("MaxStamina") or 100, _G.ESP_Settings.Stamina, 3, "STM:")
                         end
@@ -2389,7 +2357,644 @@ local Win = XPHub:Window({
         ID = "Stamina_ESP", Title = "Stamina ESP", Description = "แสดงหลอด STM พร้อมตัวเลข",
         Callback = function(v) _G.ESP_Settings.Stamina = v end
     })
-    ------------------------------------------------------- Tab 9 -------------------------------------------------------
+
+    local Sec3 = Tab3:AddSection("👁️ ESP Objects", "มองทะลุสิ่งของ")
+
+    Sec3:AddToggleSwitch({
+        ID = "Generator_ESP", 
+        Title = "Generator ESP", 
+        Description = "ESP เครื่องปั่นไฟ (ระบบล้างค่าสมบูรณ์)",
+        Default = false,
+        Callback = function(v)
+            _G.Generator_ESP_Enabled = v
+            
+            -- [[ 1. จัดการตัวแปร Connection ไว้ในระดับที่ Cleanup เข้าถึงได้ ]]
+            local mapConnection -- ประกาศไว้เพื่อให้ฟังก์ชัน Cleanup มองเห็น
+
+            -- ฟังก์ชัน Cleanup สำหรับล้าง ESP และตัดการเชื่อมต่อแมพ
+            local function clearAllGens()
+                _G.Generator_ESP_Enabled = false -- บังคับหยุดทุกลูปอัปเดต
+                
+                -- [[ หัวใจสำคัญ: ตัดการเชื่อมต่อทันที ]]
+                if mapConnection then 
+                    mapConnection:Disconnect() 
+                    mapConnection = nil
+                end
+
+                -- สแกนหาทุกลูกในแมพปัจจุบันเพื่อล้างวัตถุ ESP
+                local map = workspace:FindFirstChild("MAPS") and workspace.MAPS:FindFirstChild("GAME MAP")
+                local folder = map and map:FindFirstChild("Generators")
+                if folder then
+                    for _, gen in pairs(folder:GetChildren()) do
+                        local hl = gen:FindFirstChild("Gen_Highlight")
+                        local gui = gen:FindFirstChild("Gen_Gui")
+                        if hl then hl:Destroy() end
+                        if gui then gui:Destroy() end
+                    end
+                end
+            end
+
+            -- ลงทะเบียน CleanupTasks (ฝากฟังก์ชันล้างค่าไว้ในตะกร้า)
+            if XPHub and XPHub.CleanupTasks then
+                table.insert(XPHub.CleanupTasks, clearAllGens)
+            end
+
+            if not v then
+                clearAllGens()
+                return
+            end
+
+            -- [[ 2. ฟังก์ชันสร้าง ESP (รายเครื่อง) ]]
+            local function makeGenESP(gen)
+                if not _G.Generator_ESP_Enabled or not gen then return end
+                
+                local pivot = gen:FindFirstChild("Engine") or gen:FindFirstChild("Base") or gen.PrimaryPart or gen:FindFirstChildWhichIsA("BasePart")
+                if not pivot then return end
+
+                local hl = gen:FindFirstChild("Gen_Highlight") or Instance.new("Highlight")
+                hl.Name = "Gen_Highlight"
+                hl.FillColor = Color3.fromRGB(255, 215, 0)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.5
+                hl.Parent = gen
+                hl.Enabled = true
+
+                local gui = gen:FindFirstChild("Gen_Gui") or Instance.new("BillboardGui")
+                gui.Name = "Gen_Gui"
+                gui.Adornee = pivot
+                gui.AlwaysOnTop = true
+                gui.MaxDistance = 0
+                gui.Size = UDim2.new(15, 0, 3, 0)
+                gui.StudsOffsetWorldSpace = Vector3.new(0, 7.5, 0)
+                gui.Parent = gen
+
+                local bg = gui:FindFirstChild("BG") or Instance.new("Frame", gui)
+                if bg.Name ~= "BG" then
+                    bg.Name = "BG"
+                    bg.Size = UDim2.new(1, 0, 0.45, 0)
+                    bg.Position = UDim2.new(0.5, 0, 0.5, 0)
+                    bg.AnchorPoint = Vector2.new(0.5, 0.5)
+                    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                    bg.BackgroundTransparency = 0.4
+                    bg.BorderSizePixel = 0
+                    
+                    local stroke = Instance.new("UIStroke", bg)
+                    stroke.Thickness = 2
+                    stroke.Color = Color3.fromRGB(255, 255, 255)
+                    
+                    local fill = Instance.new("Frame", bg)
+                    fill.Name = "Fill"
+                    fill.Size = UDim2.new(0, 0, 1, 0)
+                    fill.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+                    fill.BorderSizePixel = 0
+                    
+                    local txt = Instance.new("TextLabel", bg)
+                    txt.Name = "ProgText"
+                    txt.Size = UDim2.new(1, 0, 1, 0)
+                    txt.BackgroundTransparency = 1
+                    txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    txt.Font = Enum.Font.SourceSansBold
+                    txt.TextScaled = true
+                    txt.ZIndex = 3
+                end
+
+                task.spawn(function()
+                    while _G.Generator_ESP_Enabled and gen and gen:IsDescendantOf(workspace) do
+                        local progress = gen:GetAttribute("Progress") or 0
+                        local percent = math.clamp(progress / 100, 0, 1)
+                        local b = gui:FindFirstChild("BG")
+                        if b then
+                            b.Fill.Size = UDim2.new(percent, 0, 1, 0)
+                            b.Fill.BackgroundColor3 = Color3.fromRGB(255, 255, 0):Lerp(Color3.fromRGB(0, 255, 0), percent)
+                            b.ProgText.Text = "GEN: " .. math.floor(progress) .. "%"
+                        end
+                        task.wait(0.3)
+                    end
+                    -- ถ้าหลุดลูป (โดนปิด) ให้ลบของก้อนนั้นทิ้ง
+                    if hl then hl:Destroy() end
+                    if gui then gui:Destroy() end
+                end)
+            end
+
+            -- [[ 3. ฟังก์ชันหลักสำหรับสแกนแมพ ]]
+            local function startESPLoop()
+                if not _G.Generator_ESP_Enabled then return end
+                local map = workspace:FindFirstChild("MAPS") and workspace.MAPS:FindFirstChild("GAME MAP")
+                if map then
+                    local genFolder = map:WaitForChild("Generators", 5)
+                    if genFolder then
+                        for _, obj in pairs(genFolder:GetChildren()) do
+                            makeGenESP(obj)
+                        end
+                        genFolder.ChildAdded:Connect(function(child)
+                            makeGenESP(child)
+                        end)
+                    end
+                end
+            end
+
+            -- เริ่มทำงานครั้งแรก
+            startESPLoop()
+
+            -- [[ 4. ตรวจจับการเปลี่ยนแมพ (เก็บใส่ตัวแปร mapConnection) ]]
+            mapConnection = workspace.MAPS.ChildAdded:Connect(function(child)
+                -- ถ้าโดน Reset หรือปิด Toggle ให้ทำลาย Connection นี้ทิ้ง
+                if not _G.Generator_ESP_Enabled then 
+                    if mapConnection then 
+                        mapConnection:Disconnect() 
+                        mapConnection = nil
+                    end
+                    return 
+                end
+                
+                if child.Name == "GAME MAP" then
+                    task.wait(2)
+                    startESPLoop()
+                end
+            end)
+        end
+    })
+
+    Sec3:AddToggleSwitch({
+        ID = "Trap_ESP", 
+        Title = "Trap ESP", 
+        Description = "แสดงกับดักสีแดง (ระบบล้างค่าสมบูรณ์)",
+        Default = false,
+        Callback = function(v)
+            _G.Trap_ESP_Enabled = v
+            
+            -- [[ 1. ประกาศตัวแปร Connection ไว้ระดับบนเพื่อให้ Cleanup เข้าถึงได้ ]]
+            local trapConnection
+
+            -- ฟังก์ชันสำหรับล้างค่าทั้งหมด
+            local function doTrapCleanup()
+                _G.Trap_ESP_Enabled = false -- หยุดการทำงาน
+                
+                -- ตัดการเชื่อมต่อทันทีเพื่อป้องกันการสร้าง ESP ใหม่
+                if trapConnection then
+                    trapConnection:Disconnect()
+                    trapConnection = nil
+                end
+
+                -- ล้าง Highlight และ GUI ทั่วแมพ
+                local ignoreFolder = workspace:FindFirstChild("IGNORE")
+                if ignoreFolder then
+                    for _, obj in pairs(ignoreFolder:GetChildren()) do
+                        if obj.Name == "Trap" then
+                            local hl = obj:FindFirstChild("Trap_HL")
+                            local gui = obj:FindFirstChild("Trap_Gui")
+                            if hl then hl:Destroy() end
+                            if gui then gui:Destroy() end
+                        end
+                    end
+                end
+            end
+
+            -- ลงทะเบียนในตะกร้า CleanupTasks ของ Hub
+            if XPHub and XPHub.CleanupTasks then
+                table.insert(XPHub.CleanupTasks, doTrapCleanup)
+            end
+
+            if not v then
+                doTrapCleanup()
+                return
+            end
+
+            -- [[ 2. ฟังก์ชันสร้าง ESP (รายชิ้น) ]]
+            local function applyTrapESP(obj)
+                if not _G.Trap_ESP_Enabled or obj.Name ~= "Trap" then return end
+                
+                task.wait(0.1) 
+                
+                local pivot = obj:IsA("Model") and obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart") or obj
+                if not pivot then return end
+
+                local hl = obj:FindFirstChild("Trap_HL") or Instance.new("Highlight")
+                hl.Name = "Trap_HL"
+                hl.FillColor = Color3.fromRGB(255, 0, 0)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.5
+                hl.Parent = obj
+                hl.Enabled = true
+
+                local gui = obj:FindFirstChild("Trap_Gui") or Instance.new("BillboardGui")
+                gui.Name = "Trap_Gui"
+                gui.Adornee = pivot
+                gui.AlwaysOnTop = true
+                gui.MaxDistance = 0
+                gui.Size = UDim2.new(12, 0, 2.5, 0) -- ปรับขนาดให้ใหญ่ชัดเจนเหมือนอันอื่น
+                gui.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
+                gui.Parent = obj
+
+                local txt = gui:FindFirstChild("TrapText") or Instance.new("TextLabel", gui)
+                if txt.Name ~= "TrapText" then
+                    txt.Name = "TrapText"
+                    txt.Size = UDim2.new(1, 0, 1, 0)
+                    txt.BackgroundTransparency = 1
+                    txt.Text = "TRAP"
+                    txt.TextColor3 = Color3.fromRGB(255, 0, 0)
+                    txt.TextStrokeTransparency = 0
+                    txt.Font = Enum.Font.SourceSansBold
+                    txt.TextScaled = true
+                end
+
+                -- ตรวจสอบสถานะอยู่เรื่อยๆ เพื่อลบตัวเองหากระบบปิด
+                task.spawn(function()
+                    while _G.Trap_ESP_Enabled and obj and obj:IsDescendantOf(workspace) do
+                        task.wait(1)
+                    end
+                    -- ถ้าหลุดลูป (โดน Reset/ปิด) ให้ทำลายทิ้งทันที
+                    if hl then hl:Destroy() end
+                    if gui then gui:Destroy() end
+                end)
+            end
+
+            -- [[ 3. เริ่มสแกนและดักจับ ]]
+            local ignoreFolder = workspace:FindFirstChild("IGNORE")
+            if ignoreFolder then
+                for _, child in pairs(ignoreFolder:GetChildren()) do
+                    if child.Name == "Trap" then
+                        applyTrapESP(child)
+                    end
+                end
+                
+                -- เก็บ Connection ใส่ตัวแปรที่เตรียมไว้เพื่อให้ยกเลิกได้
+                trapConnection = ignoreFolder.ChildAdded:Connect(function(newObj)
+                    -- เช็คเงื่อนไขก่อนรัน (เผื่อ Connection ยังไม่ถูก Disconnect ทันที)
+                    if not _G.Trap_ESP_Enabled then
+                        if trapConnection then trapConnection:Disconnect() end
+                        return
+                    end
+                    
+                    if newObj.Name == "Trap" then
+                        applyTrapESP(newObj)
+                    end
+                end)
+            end
+        end
+    })
+    
+    Sec3:AddToggleSwitch({
+        ID = "FuseBox_ESP", 
+        Title = "FuseBox ESP", 
+        Description = "แสดงตู้ฟิวส์พร้อมสถานะ (ระบบล้างค่าสมบูรณ์)",
+        Default = false,
+        Callback = function(v) 
+            _G.FuseBox_ESP_Enabled = v
+            
+            -- [[ 1. ฟังก์ชันสำหรับล้างค่าทั้งหมด ]]
+            -- ประกาศ mapCon ไว้ข้างนอกฟังก์ชันล้างเพื่อให้เข้าถึงได้
+            local mapCon 
+            
+            local function clearEverything()
+                _G.FuseBox_ESP_Enabled = false -- บังคับหยุด Loop
+                
+                -- ตัดการเชื่อมต่อตรวจจับแมพทันที
+                if mapCon then 
+                    mapCon:Disconnect() 
+                    mapCon = nil 
+                end
+                
+                -- ล้าง Highlight และ GUI
+                local map = workspace:FindFirstChild("MAPS") and workspace.MAPS:FindFirstChild("GAME MAP")
+                local folder = map and map:FindFirstChild("FuseBoxes")
+                if folder then
+                    for _, obj in pairs(folder:GetChildren()) do
+                        if obj:FindFirstChild("Fuse_HL") then obj.Fuse_HL:Destroy() end
+                        if obj:FindFirstChild("Fuse_Gui") then obj.Fuse_Gui:Destroy() end
+                    end
+                end
+            end
+
+            -- ลงทะเบียนในระบบ CleanupTasks ของคุณ
+            if XPHub and XPHub.CleanupTasks then
+                table.insert(XPHub.CleanupTasks, clearEverything)
+            end
+
+            if not v then
+                clearEverything()
+                return
+            end
+
+            -- [[ 2. ฟังก์ชันสร้าง ESP ]]
+            local function applyFuseESP(obj)
+                if not _G.FuseBox_ESP_Enabled or not obj then return end
+                
+                local pivot = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if not pivot then return end
+
+                local hl = obj:FindFirstChild("Fuse_HL") or Instance.new("Highlight")
+                hl.Name = "Fuse_HL"
+                hl.Parent = obj
+                
+                local gui = obj:FindFirstChild("Fuse_Gui") or Instance.new("BillboardGui")
+                gui.Name = "Fuse_Gui"
+                gui.Adornee = pivot
+                gui.AlwaysOnTop = true
+                gui.MaxDistance = 0
+                gui.Size = UDim2.new(12, 0, 2.5, 0)
+                gui.StudsOffsetWorldSpace = Vector3.new(0, 6, 0)
+                gui.Parent = obj
+
+                local txt = gui:FindFirstChild("FuseText") or Instance.new("TextLabel", gui)
+                txt.Name = "FuseText"
+                txt.Size = UDim2.new(1, 0, 1, 0)
+                txt.BackgroundTransparency = 1
+                txt.Font = Enum.Font.SourceSansBold
+                txt.TextScaled = true
+
+                task.spawn(function()
+                    -- ลูปจะเช็ค _G.FuseBox_ESP_Enabled ตลอดเวลา
+                    while _G.FuseBox_ESP_Enabled and obj and obj:IsDescendantOf(workspace) do
+                        local isInserted = obj:GetAttribute("Inserted")
+                        if isInserted then
+                            txt.Text = "⚡FUSE BOX:[INSERTED]⚡"
+                            txt.TextColor3 = Color3.fromRGB(0, 255, 0)
+                            hl.FillColor = Color3.fromRGB(0, 255, 0)
+                        else
+                            txt.Text = "🚨FUSEBOX:[EMPTY]🚨"
+                            txt.TextColor3 = Color3.fromRGB(255, 0, 0)
+                            hl.FillColor = Color3.fromRGB(255, 0, 0)
+                        end
+                        task.wait(0.5)
+                    end
+                    -- ถ้าหลุดลูป (เช่น ปิด Hub) ให้ลบของตัวเองทิ้งทันที
+                    if hl then hl:Destroy() end
+                    if gui then gui:Destroy() end
+                end)
+            end
+
+            -- [[ 3. ฟังก์ชันสแกนและตรวจจับแมพ ]]
+            local function scanFuses()
+                if not _G.FuseBox_ESP_Enabled then return end
+                local map = workspace:FindFirstChild("MAPS") and workspace.MAPS:FindFirstChild("GAME MAP")
+                if map then
+                    local folder = map:WaitForChild("FuseBoxes", 5)
+                    if folder then
+                        for _, f in pairs(folder:GetChildren()) do applyFuseESP(f) end
+                        folder.ChildAdded:Connect(applyFuseESP)
+                    end
+                end
+            end
+
+            scanFuses()
+
+            -- ตรวจจับการเปลี่ยนแมพ (เก็บใส่ตัวแปร mapCon เพื่อให้สั่ง Disconnect ได้)
+            mapCon = workspace.MAPS.ChildAdded:Connect(function(child)
+                -- เช็คเงื่อนไขความปลอดภัยก่อนรัน
+                if not _G.FuseBox_ESP_Enabled then 
+                    if mapCon then mapCon:Disconnect() end
+                    return 
+                end
+                
+                if child.Name == "GAME MAP" then
+                    task.wait(2)
+                    scanFuses()
+                end
+            end)
+        end
+    })
+
+    Sec3:AddToggleSwitch({
+        ID = "Battery_ESP", 
+        Title = "Battery ESP", 
+        Description = "มองทะลุแบตเตอรี่ (ระบบล้างค่าสมบูรณ์)",
+        Default = false,
+        Callback = function(v) 
+            _G.Battery_ESP_Enabled = v
+            
+            -- [[ 1. ประกาศตัวแปร Connection ไว้ระดับบนของ Callback ]]
+            local battConnection 
+
+            -- [[ 2. ฟังก์ชัน Cleanup สำหรับล้างทุกอย่าง ]]
+            local function doCleanup()
+                _G.Battery_ESP_Enabled = false -- บังคับหยุด Loop ทั้งหมด
+                
+                -- ตัดการเชื่อมต่อ Event ทันที (ป้องกันการเกิดใหม่)
+                if battConnection then
+                    battConnection:Disconnect()
+                    battConnection = nil
+                end
+
+                -- สแกนล้าง Highlight และ GUI ทั่วแมพ
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj.Name == "Battery" then
+                        local hl = obj:FindFirstChild("Batt_HL")
+                        local gui = obj:FindFirstChild("Batt_Gui")
+                        if hl then hl:Destroy() end
+                        if gui then gui:Destroy() end
+                    end
+                end
+            end
+
+            -- ใส่ในระบบ CleanupTasks ของ Hub
+            if XPHub and XPHub.CleanupTasks then
+                table.insert(XPHub.CleanupTasks, doCleanup)
+            end
+
+            if not v then
+                doCleanup()
+                return
+            end
+
+            -- [[ 3. ฟังก์ชันสร้าง ESP ]]
+            local function applyBattESP(obj)
+                -- เช็คเงื่อนไขความปลอดภัย
+                if not _G.Battery_ESP_Enabled or obj.Name ~= "Battery" then return end
+                if not obj:IsDescendantOf(workspace.IGNORE) then return end
+
+                task.spawn(function()
+                    while _G.Battery_ESP_Enabled and obj and obj:IsDescendantOf(workspace) do
+                        local myChar = game.Players.LocalPlayer.Character
+                        local isInMyChar = myChar and obj:IsDescendantOf(myChar)
+
+                        local hl = obj:FindFirstChild("Batt_HL") or Instance.new("Highlight")
+                        local gui = obj:FindFirstChild("Batt_Gui") or Instance.new("BillboardGui")
+
+                        if isInMyChar then
+                            hl.Enabled = false
+                            gui.Enabled = false
+                        else
+                            if hl.Parent ~= obj then
+                                hl.Name = "Batt_HL"
+                                hl.FillColor = Color3.fromRGB(0, 255, 0)
+                                hl.Parent = obj
+                            end
+                            hl.Enabled = true
+
+                            if gui.Parent ~= obj then
+                                gui.Name = "Batt_Gui"
+                                gui.Adornee = obj:IsA("Model") and obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart") or obj
+                                gui.AlwaysOnTop = true
+                                gui.Size = UDim2.new(10, 0, 2, 0)
+                                gui.Parent = obj
+                                
+                                local txt = Instance.new("TextLabel", gui)
+                                txt.Name = "BattText"
+                                txt.Size = UDim2.new(1, 0, 1, 0)
+                                txt.BackgroundTransparency = 1
+                                txt.Text = "Battery"
+                                txt.TextColor3 = Color3.fromRGB(0, 255, 0)
+                                txt.Font = Enum.Font.SourceSansBold
+                                txt.TextScaled = true
+                                txt.TextStrokeTransparency = 0
+                            end
+                            gui.Enabled = true
+                        end
+                        task.wait(0.5)
+                    end
+                    
+                    -- เมื่อหลุดลูป (โดนปิด/Reset) ให้ล้างตัวเองทิ้งทันที
+                    if hl then hl:Destroy() end
+                    if gui then gui:Destroy() end
+                end)
+            end
+
+            -- [[ 4. เริ่มสแกนและตรวจจับ ]]
+            local ignoreFolder = workspace:FindFirstChild("IGNORE")
+            if ignoreFolder then
+                for _, child in pairs(ignoreFolder:GetChildren()) do
+                    applyBattESP(child)
+                end
+                
+                -- เก็บ Connection ใส่ตัวแปรที่เตรียมไว้
+                battConnection = ignoreFolder.ChildAdded:Connect(function(child)
+                    -- เช็คอีกครั้งว่าระบบยังเปิดอยู่ไหมก่อนสร้าง
+                    if not _G.Battery_ESP_Enabled then
+                        if battConnection then battConnection:Disconnect() end
+                        return
+                    end
+                    applyBattESP(child)
+                end)
+            end
+        end
+    })
+
+    Sec3:AddToggleSwitch({
+        ID = "Door_ESP", 
+        Title = "Door ESP", 
+        Description = "แสดงขอบประตู (แก้ไขตามรูป Explorer)",
+        Default = false,
+        Callback = function(v)
+            _G.Door_ESP_Enabled = v
+            
+            local doorConnections = {}
+
+            -- [[ 1. ฟังก์ชัน Cleanup ที่ดุดันกว่าเดิม ]]
+            local function clearAllDoorESP()
+                _G.Door_ESP_Enabled = false
+                
+                -- Disconnect ทันที
+                for _, conn in pairs(doorConnections) do
+                    if conn then conn:Disconnect() end
+                end
+                doorConnections = {}
+
+                -- กวาดล้างทุกอย่างที่เกี่ยวกับ Highlight ในประตู
+                local map = workspace:FindFirstChild("MAPS") and workspace.MAPS:FindFirstChild("GAME MAP")
+                if map then
+                    for _, folder in pairs({map:FindFirstChild("Doors"), map:FindFirstChild("Double Doors")}) do
+                        if folder then
+                            for _, obj in pairs(folder:GetDescendants()) do
+                                if obj:IsA("Highlight") then 
+                                    obj:Destroy() 
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if XPHub and XPHub.CleanupTasks then
+                table.insert(XPHub.CleanupTasks, clearAllDoorESP)
+            end
+
+            if not v then
+                clearAllDoorESP()
+                return
+            end
+
+            -- [[ 2. ฟังก์ชันสร้าง ESP ]]
+            local function applyDoorESP(outerDoor)
+                -- outerDoor คือ ตัวบนสุดในรูป (Model: Door)
+                if not _G.Door_ESP_Enabled or not outerDoor or outerDoor.Name ~= "Door" then return end
+
+                -- หา innerDoor (Model ตัวที่สามในรูป)
+                local innerModel = outerDoor:FindFirstChild("Door")
+                if not innerModel then return end
+
+                task.spawn(function()
+                    while _G.Door_ESP_Enabled and innerModel and innerModel:IsDescendantOf(workspace) do
+                        -- เช็ค Broken จากตัวแม่ (outerDoor)
+                        local isBroken = outerDoor:GetAttribute("Broken") or outerDoor:GetAttribute("broken") or outerDoor:GetAttribute("BROKEN")
+                        
+                        -- [[ จัดการ Highlight ]]
+                        -- ลบ Highlight แปลกปลอมอื่นๆ ออกให้หมดเพื่อให้ตัวของเราแสดงผลได้
+                        for _, child in pairs(innerModel:GetChildren()) do
+                            if child:IsA("Highlight") and child.Name ~= "Door_HL" then
+                                child:Destroy()
+                            end
+                        end
+
+                        local hl = innerModel:FindFirstChild("Door_HL")
+                        
+                        if isBroken == true then
+                            if hl then hl:Destroy() end
+                        else
+                            if not hl then
+                                hl = Instance.new("Highlight")
+                                hl.Name = "Door_HL"
+                                hl.FillTransparency = 1 -- เอาแค่ขอบตามสั่ง
+                                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                                hl.OutlineTransparency = 0
+                                hl.Adornee = innerModel
+                                hl.Parent = innerModel
+                            end
+                            hl.Enabled = true
+                        end
+                        task.wait(1)
+                    end
+                    if innerModel and innerModel:FindFirstChild("Door_HL") then 
+                        innerModel.Door_HL:Destroy() 
+                    end
+                end)
+            end
+
+            -- [[ 3. สแกนหาประตู ]]
+            local function scanFolders()
+                if not _G.Door_ESP_Enabled then return end
+                local map = workspace:FindFirstChild("MAPS") and workspace.MAPS:FindFirstChild("GAME MAP")
+                if map then
+                    local folder = map:FindFirstChild("Doors")
+                    if folder then
+                        for _, outer in pairs(folder:GetChildren()) do
+                            applyDoorESP(outer)
+                        end
+                        -- ดักจับบานใหม่
+                        table.insert(doorConnections, folder.ChildAdded:Connect(applyDoorESP))
+                    end
+                end
+            end
+
+            scanFolders()
+
+            -- [[ 4. ระบบตัดการเชื่อมต่อแมพ ]]
+            local mapCon
+            mapCon = workspace.MAPS.ChildAdded:Connect(function(child)
+                if not _G.Door_ESP_Enabled then 
+                    if mapCon then mapCon:Disconnect() end
+                    return 
+                end
+                if child.Name == "GAME MAP" then
+                    task.wait(3)
+                    scanFolders()
+                end
+            end)
+            table.insert(doorConnections, mapCon)
+        end
+    })
+
+    --------------------------------------------- Tab 9 -------------------------------------------------------
     ------------------------------------------------------- Tab 9 -------------------------------------------------------
     ------------------------------------------------------- Tab 9 -------------------------------------------------------
     ------------------------------------------------------- Tab 9 -------------------------------------------------------
