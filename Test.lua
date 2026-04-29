@@ -1990,7 +1990,6 @@ if not XPHub:CheckPlaceId(allowedMaps) then
 end
 
 
-
 local Win = XPHub:Window({
         Title = UI_TITLE,
     })
@@ -2001,6 +2000,8 @@ local Win = XPHub:Window({
         Icon = "rbxassetid://7733960981" -- ใส่ ID ของ Icon ที่คุณต้องการ
     })
     local Sec1 = Tab1:AddSection("🔥 Automation", "ทำงานอัตโนมัติ")
+
+
 
     -- Sec1:AddDropdown({
     --     ID = "TargetNPC", -- เพิ่ม ID
@@ -2993,6 +2994,82 @@ local Win = XPHub:Window({
             table.insert(doorConnections, mapCon)
         end
     })
+
+    local Sec3 = Tab3:AddSection("👁️ Vision", "วิสัยทัศน์")
+
+    Sec3:AddToggleSwitch({
+        ID = "Full_Brightness", 
+        Title = "Full Brightness", 
+        Description = "ล็อคเวลา 13:00 (สู้กับสคริปต์เกมที่คอยเปลี่ยนเวลา)",
+        Default = false,
+        Callback = function(v) 
+            _G.FullBrightness_Enabled = v
+            
+            local lighting = game:GetService("Lighting")
+            local timeConn -- สำหรับเก็บการดักจับการเปลี่ยนเวลา
+            
+            -- [[ 1. ฟังก์ชันคืนค่าเดิม (Restore) ]]
+            local function resetLighting()
+                _G.FullBrightness_Enabled = false
+                
+                -- ตัดการเชื่อมต่อ Event ดักเวลา
+                if timeConn then 
+                    timeConn:Disconnect() 
+                    timeConn = nil 
+                end
+                
+                -- คืนค่าเป็นเที่ยงคืนและเปิดระบบเดิมของเกม
+                lighting.ClockTime = 0 
+                lighting.GlobalShadows = true
+                
+                local sky = lighting:FindFirstChildOfClass("Sky")
+                if sky then
+                    sky.SunLayeredClouds = true
+                end
+            end
+
+            -- ลงทะเบียน Cleanup ในระบบ Hub
+            if XPHub and XPHub.CleanupTasks then
+                table.insert(XPHub.CleanupTasks, resetLighting)
+            end
+
+            if not v then
+                resetLighting()
+                return
+            end
+
+            -- [[ 2. ระบบล็อคเวลาแบบ Real-time ]]
+            -- วิธีที่ 1: ดักจับทันทีที่มีการพยายามเปลี่ยน ClockTime
+            timeConn = lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+                if _G.FullBrightness_Enabled and lighting.ClockTime ~= 13 then
+                    lighting.ClockTime = 13
+                end
+            end)
+
+            -- วิธีที่ 2: ลูปตรวจสอบซ้ำ (เผื่อเกมเปลี่ยนผ่าน TimeOfDay หรือวิธีอื่น)
+            task.spawn(function()
+                while _G.FullBrightness_Enabled do
+                    if lighting.ClockTime ~= 13 then
+                        lighting.ClockTime = 13
+                    end
+                    
+                    if lighting.GlobalShadows ~= false then
+                        lighting.GlobalShadows = false
+                    end
+                    
+                    local sky = lighting:FindFirstChildOfClass("Sky")
+                    if sky then
+                        if sky.SunLayeredClouds ~= false then
+                            sky.SunLayeredClouds = false
+                        end
+                    end
+                    
+                    task.wait(0.1) -- เช็คถี่มาก (10 ครั้งต่อวินาที) เพื่อป้องกันการกระพริบของแสง
+                end
+            end)
+        end
+    })
+
 
     --------------------------------------------- Tab 9 -------------------------------------------------------
     ------------------------------------------------------- Tab 9 -------------------------------------------------------
