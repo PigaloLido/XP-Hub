@@ -1,55 +1,54 @@
-ช่วยปรับUI ให้น่าใช้กว่านี้หน่อยสิ มันไม่สวยอะ แก้ให้หน่อย 
-
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
-local LocalPlayer = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local TS = game:GetService("TweenService")
-
 
 -- 1. ชื่อต้องตรงกับที่ตั้งใน ScreenGui.Name
-local UI_NAME = "XPHub_UI" 
-local UI_TITLE = "XP Hub 〢 Premium" --"XP Hub 〢 Premium Edition (Perfect Fix)"
+local UI_NAME = "XPHub_UI"
+local UI_TITLE = "XP Hub 〢 Premium"
 local UI_CREDIT = "By : Pigalo"
-local UI_VERSION = "|  v1.0.0"
+local UI_VERSION = "v1.0.0"
 
--- 2. เช็คทั้งใน CoreGui (รันผ่านรันเนอร์) และ PlayerGui (กรณีทั่วไป)
-local OldUI = game:GetService("CoreGui"):FindFirstChild(UI_NAME) or 
-              game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild(UI_NAME)
+-- 2. เช็คทั้งใน CoreGui และ PlayerGui ป้องกันการรันซ้ำ
+local CoreGuiSuccess, CoreGui = pcall(function() return game:GetService("CoreGui") end)
+local OldUI = (CoreGuiSuccess and CoreGui and CoreGui:FindFirstChild(UI_NAME)) or PlayerGui:FindFirstChild(UI_NAME)
 
 if OldUI then
-    -- ถ้าเจอของเก่า ให้พิมพ์บอกใน Console แล้วหยุดรันสคริปต์ใหม่ทันที
     warn("สคริปต์รันอยู่แล้ว! | The script is already running!")
     return
 end
 
-
-
-local XPHub = { 
-    Elements = {},   
-    ConfigData = {}, 
-    Objects = {} -- เก็บ UI Objects และ Callback สำหรับระบบ Load
+local XPHub = {
+    Elements = {},
+    ConfigData = {},
+    Objects = {} -- เก็บ UI Objects และ Callback สำหรับระบบ Load / Reset
 }
+
 local activeDropdownList = nil
+local activeDropdownArrow = nil
 local MainFrame
+local StartBtn
+local IsBinding = false
 
 -- โฟลเดอร์สำหรับบันทึกการตั้งค่า (Config)
 local ConfigFolder = "XPHub_Configs"
-if not isfolder(ConfigFolder) then makefolder(ConfigFolder) end
+if isfolder and makefolder and not isfolder(ConfigFolder) then
+    makefolder(ConfigFolder)
+end
 
 -- ฟังก์ชันจัดการ Config (Save/Load/Get List)
 local function GetConfigList()
+    if not listfiles or not isfolder or not isfolder(ConfigFolder) then return {} end
     local files = listfiles(ConfigFolder)
     local names = {}
     for _, file in ipairs(files) do
-        -- 1. ตรวจสอบก่อนว่าต้องเป็นไฟล์ .json เท่านั้น (ป้องกัน autoload.txt โผล่มา)
         if file:sub(-5) == ".json" then
             local cleanPath = file:gsub("\\", "/")
             local nameWithExtension = cleanPath:gsub(ConfigFolder .. "/", "")
             local finalName = nameWithExtension:gsub(".json", "")
-            
             table.insert(names, finalName)
         end
     end
@@ -57,9 +56,9 @@ local function GetConfigList()
 end
 
 local function SaveCurrentConfig(name)
-    if name == "" then return end
+    if not name or name == "" or not writefile then return end
     local json = HttpService:JSONEncode(XPHub.ConfigData)
-    writefile(ConfigFolder.."/"..name..".json", json)
+    writefile(ConfigFolder .. "/" .. name .. ".json", json)
     print("Successfully saved config: " .. name)
 end
 
@@ -67,10 +66,7 @@ local function ApplySettings(data)
     for id, value in pairs(data) do
         local obj = XPHub.Objects[id]
         if obj then
-            -- 1. สั่งให้ UI ขยับหน้าตา (Visual Sync)
             if obj.Update then obj.Update(value) end
-            
-            -- 2. สั่งให้ Callback ทำงานจริง (Action Sync)
             if obj.Callback then
                 task.spawn(function()
                     obj.Callback(value)
@@ -81,73 +77,61 @@ local function ApplySettings(data)
 end
 
 local function LoadConfigData(name)
+    if not isfile or not readfile then return nil end
     local fileName = ConfigFolder .. "/" .. name .. ".json"
     if isfile(fileName) then
         local json = readfile(fileName)
         local data = HttpService:JSONDecode(json)
-        for id, value in pairs(data) do XPHub.ConfigData[id] = value end
-        
-        ApplySettings(data) -- เรียกใช้ฟังก์ชัน Sync ทันทีหลังโหลด
+        for id, value in pairs(data) do
+            XPHub.ConfigData[id] = value
+        end
+        ApplySettings(data)
         return data
     end
     return nil
 end
 
 local function UpdateState(id, value)
-    if id then 
-        XPHub.ConfigData[id] = value 
+    if id then
+        XPHub.ConfigData[id] = value
     end
 end
 
 local function ResetAllSettings()
-    -- วนลูปตาม IDs ทั้งหมดที่บันทึกไว้ใน Objects
     for id, obj in pairs(XPHub.Objects) do
-        
-        -- 1. จัดการส่วน Keybind (ต้องสั่งหยุดการดักฟังปุ่มทันที)
         if obj.Type == "Keybind" then
             pcall(function()
-                -- ถ้ามีฟังก์ชัน Stop ให้รันเพื่อตัด Connection
                 if obj.Stop then
                     obj.Stop()
-                -- กรณีไม่ได้ใช้โครงสร้าง Stop ให้ลองตัด Connection ตรงๆ (แผนสำรอง)
                 elseif obj.Connection then
                     obj.Connection:Disconnect()
                 end
             end)
-            -- เมื่อหยุด Keybind แล้ว ให้ข้ามไปทำไอเทมตัวถัดไปในลูปทันที
-            continue 
+            continue
         end
 
-        -- 2. จัดการส่วน Component อื่นๆ (Toggle, Slider, Dropdown, Input)
         if obj.Callback then
             local defaultValue = nil
-            
-            -- กำหนดค่าเริ่มต้นตามประเภทของ Component เพื่อ Reset ระบบเกม
             if obj.Type == "Slider" then
-                -- Reset กลับไปค่าต่ำสุดที่ตั้งไว้
                 defaultValue = (obj.Config and obj.Config.Min) or 0
             elseif obj.Type == "Toggle" then
-                -- ปิดฟังก์ชันการทำงานทั้งหมด
                 defaultValue = false
             elseif obj.Type == "Dropdown" then
-                -- ป้องกัน Error 'concat' โดยคืนค่าเป็นข้อความว่าง หรือค่า Default
                 defaultValue = obj.Default or ""
+            elseif obj.Type == "MultiSelect" then
+                defaultValue = {}
             elseif obj.Type == "Input" then
                 defaultValue = ""
             end
-            
-            -- สั่งรัน Callback เพื่อคืนค่าในเกม (เช่น คืนค่า WalkSpeed เป็น 16)
+
             if defaultValue ~= nil then
-                -- ใช้ task.spawn เพื่อให้การ Reset แต่ละตัวไม่ขัดจังหวะกัน
                 task.spawn(function()
-                    -- pcall ป้องกันกรณี Error หากฟังก์ชัน Callback อ้างอิงถึงสิ่งที่ถูกลบไปแล้ว
                     pcall(function()
                         obj.Callback(defaultValue)
                     end)
                 end)
             end
-            
-            -- อัปเดตหน้าตา UI ให้กลับไปจุดเริ่มต้น (ถ้า UI ยังไม่โดน Destroy)
+
             if obj.Update then
                 pcall(function()
                     obj.Update(defaultValue)
@@ -155,51 +139,57 @@ local function ResetAllSettings()
             end
         end
     end
-    
     print("Kill Switch: ทุกระบบถูก Reset และตัดการเชื่อมต่อ Keybind เรียบร้อยแล้ว")
 end
 
 local AutoloadFile = ConfigFolder .. "/autoload.txt"
-local function SetAutoload(name) writefile(AutoloadFile, name) end
-local function GetAutoload() return isfile(AutoloadFile) and readfile(AutoloadFile) or nil end
-local function ResetAutoload() if isfile(AutoloadFile) then delfile(AutoloadFile) end end
+local function SetAutoload(name) if writefile then writefile(AutoloadFile, name) end end
+local function GetAutoload() return (isfile and readfile and isfile(AutoloadFile)) and readfile(AutoloadFile) or nil end
+local function ResetAutoload() if isfile and delfile and isfile(AutoloadFile) then delfile(AutoloadFile) end end
 
-
-
-
--- ธีมสีหลัก Windows XP
+-- ==========================================
+-- 🎨 ธีมสีใหม่: Modern Dark & Cobalt Blue
+-- ==========================================
 local Colors = {
-    TitleBarDark = Color3.fromRGB(0, 80, 230),
-    TitleBarLight = Color3.fromRGB(45, 140, 255),
-    Background = Color3.fromRGB(236, 233, 216),
-    Sidebar = Color3.fromRGB(214, 211, 191),
-    Text = Color3.fromRGB(0, 0, 0),
-    SubText = Color3.fromRGB(80, 80, 80),
-    
-    -- ปุ่มควบคุม
-    CloseRed = Color3.fromRGB(232, 17, 35),
-    CloseRedLight = Color3.fromRGB(255, 100, 100),
-    ControlBlue = Color3.fromRGB(45, 120, 255),
-    ControlBlueLight = Color3.fromRGB(100, 180, 255),
-    
-    -- ส่วนประกอบ
-    StartGreen = Color3.fromRGB(58, 175, 58),
-    White = Color3.fromRGB(255, 255, 255),
-    Border = Color3.fromRGB(128, 128, 128),
-    ScrollBarThumb = Color3.fromRGB(37, 71, 46),
-    ButtonClassic = Color3.fromRGB(212, 208, 200),
-    DropdownSelectBlue = Color3.fromRGB(10, 36, 106), 
-    SwitchOn = Color3.fromRGB(0, 100, 255),
-    SwitchOff = Color3.fromRGB(180, 180, 180),
-    InputBackground = Color3.fromRGB(255, 255, 255),
-    XPInputBorder = Color3.fromRGB(127, 157, 185) -- ขอบน้ำเงินสไตล์ XP สำหรับ Input
+    -- พื้นหลังหลัก
+    WindowBg        = Color3.fromRGB(15, 17, 24),
+    TopBarBg        = Color3.fromRGB(20, 23, 33),
+    SidebarBg       = Color3.fromRGB(19, 22, 31),
+    SectionHeaderBg = Color3.fromRGB(24, 29, 42),
+    CardBg          = Color3.fromRGB(23, 27, 38),
+    CardHover       = Color3.fromRGB(29, 34, 48),
+    InputBg         = Color3.fromRGB(16, 19, 27),
+    DropdownBg      = Color3.fromRGB(20, 24, 34),
 
+    -- สี Accent (ฟ้า-น้ำเงินพรีเมียม)
+    Accent          = Color3.fromRGB(59, 130, 246),
+    AccentLight     = Color3.fromRGB(96, 165, 250),
+    AccentDark      = Color3.fromRGB(37, 99, 235),
+
+    -- ข้อความ
+    Text            = Color3.fromRGB(243, 244, 246),
+    SubText         = Color3.fromRGB(148, 163, 184),
+    MutedText       = Color3.fromRGB(100, 116, 139),
+
+    -- เส้นขอบ
+    Border          = Color3.fromRGB(38, 45, 64),
+    BorderHighlight = Color3.fromRGB(65, 80, 115),
+
+    -- ปุ่มควบคุมหน้าต่าง
+    CloseRed        = Color3.fromRGB(239, 68, 68),
+    ControlBtnBg    = Color3.fromRGB(30, 35, 48),
+
+    -- สถานะ Switch / ปุ่ม
+    SwitchOn        = Color3.fromRGB(59, 130, 246),
+    SwitchOff       = Color3.fromRGB(45, 53, 72),
+    ButtonBg        = Color3.fromRGB(34, 41, 58),
+    ButtonHover     = Color3.fromRGB(47, 56, 78),
+    White           = Color3.fromRGB(255, 255, 255),
 }
 
 local SizeItem = {
-    -- ขนาด
-    BoxItem = UDim2.new(0.980, 0, 0, 65),
-    TitleItem = UDim2.new(0.980, 0, 0, 45)
+    BoxItem   = UDim2.new(1, -4, 0, 58),
+    TitleItem = UDim2.new(1, -4, 0, 46)
 }
 
 -- ฟังก์ชันปิด Dropdown ทั้งหมด
@@ -208,11 +198,15 @@ local function CloseAllDropdowns()
         activeDropdownList.Visible = false
         activeDropdownList = nil
     end
+    if activeDropdownArrow then
+        TweenService:Create(activeDropdownArrow, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Rotation = 0}):Play()
+        activeDropdownArrow = nil
+    end
 end
 
 -- ระบบลากหน้าต่าง
 local function MakeDraggable(obj, dragPart)
-    local dragging, dragInput, dragStart, startPos
+    local dragging, dragStart, startPos
     dragPart.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
@@ -231,6 +225,7 @@ local function MakeDraggable(obj, dragPart)
     end)
 end
 
+-- ระบบย่อ/ขยายขนาดหน้าต่าง
 local function MakeResizable(obj, dragPart)
     local dragging = false
     local dragStart = nil
@@ -247,10 +242,8 @@ local function MakeResizable(obj, dragPart)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
-            -- คำนวณขนาดใหม่ (ตั้งขั้นต่ำไว้ที่ 500x350 เพื่อไม่ให้ UI พัง)
-            local newWidth = math.max(500, startSize.X.Offset + delta.X)
-            local newHeight = math.max(350, startSize.Y.Offset + delta.Y)
-            
+            local newWidth = math.max(540, startSize.X.Offset + delta.X)
+            local newHeight = math.max(360, startSize.Y.Offset + delta.Y)
             obj.Size = UDim2.new(0, newWidth, 0, newHeight)
         end
     end)
@@ -262,26 +255,23 @@ local function MakeResizable(obj, dragPart)
     end)
 end
 
-local wasDragging = false -- ตัวแปรกลางสำหรับเช็คสถานะการลาก (ไว้ใช้ร่วมกับ MouseButton1Click)
-local lastScreenRatioX = 0.5 -- ค่าเริ่มต้นกึ่งกลางจอ
-local lastScreenRatioY = 0.05 -- ค่าเริ่มต้นขอบบน
+local wasDragging = false
+local lastScreenRatioX = 0.5
+local lastScreenRatioY = 0.06
 
--- ฟังก์ชันหลักสำหรับการลาก
 local function MakeDraggableStartBtn(obj, dragPart)
     local dragging = false
-    local dragInput, dragStart, startPos
-    
+    local dragStart, startPos
+
     dragPart.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            wasDragging = false -- รีเซ็ตสถานะทุกครั้งที่เริ่มจิ้ม
+            wasDragging = false
             dragStart = input.Position
             startPos = obj.Position
-            
-            -- ดักจับตอนปล่อยปุ่มเพื่อหยุดการลาก
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then 
-                    dragging = false 
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
                 end
             end)
         end
@@ -290,165 +280,189 @@ local function MakeDraggableStartBtn(obj, dragPart)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
-            
-            -- ถ้าเมาส์ขยับเกิน 5 pixels ให้ถือว่าเป็นการลาก (จะไปล็อคไม่ให้เมนูเปิด)
             if delta.Magnitude > 5 then
                 wasDragging = true
             end
-            
-            -- คำนวณตำแหน่งพิกัดใหม่
+
             local newPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            
-            -- ระบบกันออกนอกจอ (Clamp)
             local parentScreen = obj:FindFirstAncestorOfClass("ScreenGui")
             if parentScreen then
                 local screenSize = parentScreen.AbsoluteSize
                 local btnSize = obj.AbsoluteSize
-                
-                -- แปลงพิกัดทั้งหมดเป็น Offset เพื่อหาจุดที่แน่นอนบนหน้าจอ
                 local currentX = newPos.X.Offset + (screenSize.X * newPos.X.Scale)
                 local currentY = newPos.Y.Offset + (screenSize.Y * newPos.Y.Scale)
-                
-                -- ล็อคไม่ให้ค่าเกินขอบจอ (0 ถึง ขนาดจอ-ขนาดปุ่ม)
-                local finalX = math.clamp(currentX, 0, screenSize.X - btnSize.X)
-                local finalY = math.clamp(currentY, 0, screenSize.Y - btnSize.Y)
-                
-                -- อัปเดตตำแหน่งปุ่ม
+                local finalX = math.clamp(currentX, 8, math.max(8, screenSize.X - btnSize.X - 8))
+                local finalY = math.clamp(currentY, 8, math.max(8, screenSize.Y - btnSize.Y - 8))
+
                 obj.Position = UDim2.new(0, finalX, 0, finalY)
+                if screenSize.X - btnSize.X > 0 then lastScreenRatioX = finalX / (screenSize.X - btnSize.X) end
+                if screenSize.Y - btnSize.Y > 0 then lastScreenRatioY = finalY / (screenSize.Y - btnSize.Y) end
             else
-                -- กรณีฉุกเฉินถ้าหา ScreenGui ไม่เจอ ให้ลากแบบปกติ
                 obj.Position = newPos
             end
-            
         end
     end)
 end
 
--- ฟังก์ชันปรับตำแหน่งปุ่มอัตโนมัติเมื่อขนาดหน้าจอเปลี่ยน
 local function AdjustStartBtnByRatio(obj)
     local parentScreen = obj:FindFirstAncestorOfClass("ScreenGui")
     if parentScreen and obj.Visible then
         local screenSize = parentScreen.AbsoluteSize
         local btnSize = obj.AbsoluteSize
-        
-        -- คำนวณพิกัดใหม่จาก Ratio ที่บันทึกไว้ล่าสุด
         local targetX = lastScreenRatioX * (screenSize.X - btnSize.X)
         local targetY = lastScreenRatioY * (screenSize.Y - btnSize.Y)
-        
-        -- เลื่อนปุ่มไปยังตำแหน่งที่เหมาะสมด้วย Tween เพื่อความนุ่มนวล
+
         TweenService:Create(obj, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {
-            Position = UDim2.new(0, math.clamp(targetX, 0, screenSize.X - btnSize.X), 0, math.clamp(targetY, 0, screenSize.Y - btnSize.Y))
+            Position = UDim2.new(0, math.clamp(targetX, 8, math.max(8, screenSize.X - btnSize.X - 8)), 0, math.clamp(targetY, 8, math.max(8, screenSize.Y - btnSize.Y - 8)))
         }):Play()
     end
 end
 
--- ต้องมีฟังก์ชันนี้ประกาศไว้ด้านบนๆ ของสคริปต์
-local function SaveCurrentConfig(name)
-    if name == "" then return end
-    local json = HttpService:JSONEncode(XPHub.ConfigData)
-    writefile(ConfigFolder.."/"..name..".json", json)
-    print("Saved: " .. name)
+-- Helper สร้าง UIStroke อย่างรวดเร็ว
+local function AddStroke(parent, color, thickness, transparency)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or Colors.Border
+    stroke.Thickness = thickness or 1
+    stroke.Transparency = transparency or 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = parent
+    return stroke
 end
 
+-- Helper สร้าง Hover Effect ให้การ์ดแต่ละแถว
+local function AttachCardHover(row)
+    local stroke = AddStroke(row, Colors.Border, 1, 0.2)
+    row.MouseEnter:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {BackgroundColor3 = Colors.CardHover}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {Color = Colors.BorderHighlight, Transparency = 0}):Play()
+    end)
+    row.MouseLeave:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {BackgroundColor3 = Colors.CardBg}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {Color = Colors.Border, Transparency = 0.2}):Play()
+    end)
+    return stroke
+end
+
+-- ==========================================
+-- 🪟 สร้างหน้าต่างหลัก (Window)
+-- ==========================================
 function XPHub:Window(GuiConfig)
     GuiConfig = GuiConfig or {}
     local window = {Tabs = {}, CountTab = 0}
-    
+
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = UI_NAME
     ScreenGui.IgnoreGuiInset = true
-    -- ตรวจสอบว่ารันใน Studio หรือ Execute จริง
-    if syn and syn.protect_gui then
-        syn.protect_gui(ScreenGui)
-        ScreenGui.Parent = game.CoreGui
-    elseif gethui then
-        ScreenGui.Parent = gethui()
-    else
-        ScreenGui.Parent = game.CoreGui
-    end
-
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     ScreenGui.DisplayOrder = 9999
-    ScreenGui.Parent = PlayerGui
+
+    if syn and syn.protect_gui then
+        syn.protect_gui(ScreenGui)
+        ScreenGui.Parent = CoreGui
+    elseif gethui then
+        ScreenGui.Parent = gethui()
+    elseif CoreGuiSuccess and CoreGui then
+        local ok = pcall(function() ScreenGui.Parent = CoreGui end)
+        if not ok then ScreenGui.Parent = PlayerGui end
+    else
+        ScreenGui.Parent = PlayerGui
+    end
 
     MainFrame = Instance.new("Frame")
-    XPHub.MainFrame = MainFrame -- เก็บไว้ในตารางหลักเพื่อให้ฟังก์ชันอื่นๆ เข้าถึงได้ง่ายขึ้น
-    MainFrame.Size = UDim2.new(0, 640, 0, 520)
-    MainFrame.Position = UDim2.new(0.5, -320, 0.5, -260)
-    MainFrame.BackgroundColor3 = Colors.TitleBarDark
+    XPHub.MainFrame = MainFrame
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 680, 0, 480)
+    MainFrame.Position = UDim2.new(0.5, -340, 0.5, -240)
+    MainFrame.BackgroundColor3 = Colors.WindowBg
     MainFrame.BorderSizePixel = 0
-    MainFrame.ClipsDescendants = true 
+    MainFrame.ClipsDescendants = true
     MainFrame.ZIndex = 1
     MainFrame.Parent = ScreenGui
 
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+    AddStroke(MainFrame, Colors.BorderHighlight, 1.2, 0.15)
 
-    -- สร้างปุ่มสำหรับยืดหด (Resize Handle)
+    -- ปุ่ม Resize มุมขวาล่าง
     local ResizeHandle = Instance.new("Frame")
     ResizeHandle.Name = "ResizeHandle"
-    ResizeHandle.Size = UDim2.new(0, 25, 0, 25) -- ขนาดที่นิ้วมือบนมือถือกดง่าย
-    ResizeHandle.Position = UDim2.new(1, -25, 1, -22)
-    ResizeHandle.BackgroundTransparency = 1 -- ซ่อนพื้นหลัง
+    ResizeHandle.Size = UDim2.new(0, 22, 0, 22)
+    ResizeHandle.Position = UDim2.new(1, -22, 1, -22)
+    ResizeHandle.BackgroundTransparency = 1
     ResizeHandle.ZIndex = 5000
     ResizeHandle.Parent = MainFrame
 
-    -- วาดสัญลักษณ์มุมสามเหลี่ยม (สไตล์ Windows XP / Classic)
     local ResizeIcon = Instance.new("TextLabel")
-    ResizeIcon.Text = "◢" -- สัญลักษณ์มุมขวา
-    ResizeIcon.Size = UDim2.new(1, 0, 1, 0)
+    ResizeIcon.Text = "◢"
+    ResizeIcon.Size = UDim2.new(1, -4, 1, -4)
     ResizeIcon.BackgroundTransparency = 1
-    ResizeIcon.TextColor3 = Colors.Border
-    ResizeIcon.TextSize = 20
+    ResizeIcon.TextColor3 = Colors.MutedText
+    ResizeIcon.TextSize = 14
     ResizeIcon.TextXAlignment = Enum.TextXAlignment.Right
     ResizeIcon.TextYAlignment = Enum.TextYAlignment.Bottom
     ResizeIcon.ZIndex = 4999
     ResizeIcon.Parent = ResizeHandle
 
-    -- เรียกใช้งานระบบ Resize
     MakeResizable(MainFrame, ResizeHandle)
 
-
-local MainCorner = Instance.new("UICorner")
-    MainCorner.CornerRadius = UDim.new(0, 10)
-    MainCorner.Parent = MainFrame
-
-    -- 1. แถบ TopBar หลัก
+    -- ==========================================
+    -- 🔝 TopBar
+    -- ==========================================
     local TopBar = Instance.new("Frame")
-    TopBar.Size = UDim2.new(1, 0, 0, 36)
-    TopBar.BackgroundColor3 = Colors.White
+    TopBar.Name = "TopBar"
+    TopBar.Size = UDim2.new(1, 0, 0, 44)
+    TopBar.BackgroundColor3 = Colors.TopBarBg
     TopBar.BorderSizePixel = 0
     TopBar.ZIndex = 1115
     TopBar.Parent = MainFrame
-    
-    local TopCorner = Instance.new("UICorner")
-    TopCorner.CornerRadius = UDim.new(0, 10)
-    TopCorner.Parent = TopBar
 
-    local TopGradient = Instance.new("UIGradient")
-    TopGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Colors.TitleBarLight),
-        ColorSequenceKeypoint.new(0.5, Colors.TitleBarDark),
-        ColorSequenceKeypoint.new(1, Colors.TitleBarDark)
-    })
-    TopGradient.Rotation = 90
-    TopGradient.Parent = TopBar
+    Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 12)
 
-    -- 2. ส่วนของ Logo (ซ้ายสุด)
+    -- ปิดมุมโค้งด้านล่างของ TopBar ให้เรียบสนิทกับตัวหน้าต่าง
+    local TopBarBottomFix = Instance.new("Frame")
+    TopBarBottomFix.Size = UDim2.new(1, 0, 0, 12)
+    TopBarBottomFix.Position = UDim2.new(0, 0, 1, -12)
+    TopBarBottomFix.BackgroundColor3 = Colors.TopBarBg
+    TopBarBottomFix.BorderSizePixel = 0
+    TopBarBottomFix.ZIndex = 1115
+    TopBarBottomFix.Parent = TopBar
+
+    -- เส้นคั่นใต้ TopBar
+    local TopDivider = Instance.new("Frame")
+    TopDivider.Size = UDim2.new(1, 0, 0, 1)
+    TopDivider.Position = UDim2.new(0, 0, 1, -1)
+    TopDivider.BackgroundColor3 = Colors.Border
+    TopDivider.BorderSizePixel = 0
+    TopDivider.ZIndex = 1116
+    TopDivider.Parent = TopBar
+
+    -- โลโก้ด้านซ้าย
+    local LogoBadge = Instance.new("Frame")
+    LogoBadge.Size = UDim2.new(0, 28, 0, 28)
+    LogoBadge.Position = UDim2.new(0, 12, 0.5, 0)
+    LogoBadge.AnchorPoint = Vector2.new(0, 0.5)
+    LogoBadge.BackgroundColor3 = Colors.AccentDark
+    LogoBadge.BackgroundTransparency = 0.75
+    LogoBadge.ZIndex = 1116
+    LogoBadge.Parent = TopBar
+    Instance.new("UICorner", LogoBadge).CornerRadius = UDim.new(0, 7)
+    AddStroke(LogoBadge, Colors.Accent, 1, 0.5)
+
     local TopLogo = Instance.new("ImageLabel")
     TopLogo.Name = "TopLogo"
-    TopLogo.Size = UDim2.new(0, 22, 0, 22)
-    TopLogo.Position = UDim2.new(0, 10, 0.5, 0)
-    TopLogo.AnchorPoint = Vector2.new(0, 0.5)
+    TopLogo.Size = UDim2.new(0, 20, 0, 20)
+    TopLogo.Position = UDim2.new(0.5, 0, 0.5, 0)
+    TopLogo.AnchorPoint = Vector2.new(0.5, 0.5)
     TopLogo.Image = "rbxassetid://106080187166557"
     TopLogo.BackgroundTransparency = 1
-    TopLogo.ZIndex = 1116
-    TopLogo.Parent = TopBar
+    TopLogo.ZIndex = 1117
+    TopLogo.Parent = LogoBadge
 
--- [[ ส่วนชื่อ Title, Credit และ Version ]]
+    -- ส่วนชื่อ Title, Credit และ Version Badge
     local TitleContainer = Instance.new("Frame")
     TitleContainer.Name = "TitleContainer"
-    TitleContainer.Size = UDim2.new(1, -150, 1, 0)
-    TitleContainer.Position = UDim2.new(0, 40, 0, 0)
+    TitleContainer.Size = UDim2.new(1, -170, 1, 0)
+    TitleContainer.Position = UDim2.new(0, 48, 0, 0)
     TitleContainer.BackgroundTransparency = 1
     TitleContainer.ZIndex = 1116
     TitleContainer.Parent = TopBar
@@ -456,16 +470,15 @@ local MainCorner = Instance.new("UICorner")
     local TitleLayout = Instance.new("UIListLayout")
     TitleLayout.FillDirection = Enum.FillDirection.Horizontal
     TitleLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    TitleLayout.Padding = UDim.new(0, 8) 
+    TitleLayout.Padding = UDim.new(0, 8)
     TitleLayout.SortOrder = Enum.SortOrder.LayoutOrder
     TitleLayout.Parent = TitleContainer
 
-    -- 1. ชื่อ Hub
     local HubTitle = Instance.new("TextLabel")
-    HubTitle.Text = GuiConfig.Title
-    HubTitle.Font = Enum.Font.ArialBold
-    HubTitle.TextSize = 17
-    HubTitle.TextColor3 = Colors.White
+    HubTitle.Text = GuiConfig.Title or UI_TITLE
+    HubTitle.Font = Enum.Font.GothamBold
+    HubTitle.TextSize = 15
+    HubTitle.TextColor3 = Colors.Text
     HubTitle.Size = UDim2.new(0, 0, 1, 0)
     HubTitle.AutomaticSize = Enum.AutomaticSize.X
     HubTitle.BackgroundTransparency = 1
@@ -473,12 +486,11 @@ local MainCorner = Instance.new("UICorner")
     HubTitle.LayoutOrder = 1
     HubTitle.Parent = TitleContainer
 
-    -- 2. เครดิต (By : Pigalo)
     local CreditTitle = Instance.new("TextLabel")
     CreditTitle.Text = UI_CREDIT
-    CreditTitle.Font = Enum.Font.SourceSans
-    CreditTitle.TextSize = 13
-    CreditTitle.TextColor3 = Color3.fromRGB(210, 210, 210) -- สีขาวเทา
+    CreditTitle.Font = Enum.Font.GothamMedium
+    CreditTitle.TextSize = 12
+    CreditTitle.TextColor3 = Colors.SubText
     CreditTitle.Size = UDim2.new(0, 0, 1, 0)
     CreditTitle.AutomaticSize = Enum.AutomaticSize.X
     CreditTitle.BackgroundTransparency = 1
@@ -486,42 +498,54 @@ local MainCorner = Instance.new("UICorner")
     CreditTitle.LayoutOrder = 2
     CreditTitle.Parent = TitleContainer
 
-    -- 3. เลข Version (เพิ่มใหม่)
+    -- ป้าย Version ทรงแคปซูล
+    local VersionBadge = Instance.new("Frame")
+    VersionBadge.Size = UDim2.new(0, 0, 0, 20)
+    VersionBadge.AutomaticSize = Enum.AutomaticSize.X
+    VersionBadge.BackgroundColor3 = Colors.AccentDark
+    VersionBadge.BackgroundTransparency = 0.75
+    VersionBadge.ZIndex = 1116
+    VersionBadge.LayoutOrder = 3
+    VersionBadge.Parent = TitleContainer
+    Instance.new("UICorner", VersionBadge).CornerRadius = UDim.new(1, 0)
+    AddStroke(VersionBadge, Colors.Accent, 1, 0.5)
+
+    local VersionPadding = Instance.new("UIPadding", VersionBadge)
+    VersionPadding.PaddingLeft = UDim.new(0, 8)
+    VersionPadding.PaddingRight = UDim.new(0, 8)
+
     local VersionLabel = Instance.new("TextLabel")
     VersionLabel.Name = "VersionLabel"
     VersionLabel.Text = UI_VERSION
-    VersionLabel.Font = Enum.Font.Code -- ใช้ฟอนต์แนว Code จะดูเหมือนโปรแกรมจริง
-    VersionLabel.TextSize = 12
-    VersionLabel.TextColor3 = Color3.fromRGB(255, 255, 100) -- สีเหลืองอ่อนให้เด่นออกมานิดนึง
+    VersionLabel.Font = Enum.Font.RobotoMono
+    VersionLabel.TextSize = 11
+    VersionLabel.TextColor3 = Colors.AccentLight
     VersionLabel.Size = UDim2.new(0, 0, 1, 0)
     VersionLabel.AutomaticSize = Enum.AutomaticSize.X
     VersionLabel.BackgroundTransparency = 1
-    VersionLabel.ZIndex = 1116
-    VersionLabel.LayoutOrder = 3
-    VersionLabel.Parent = TitleContainer
+    VersionLabel.ZIndex = 1117
+    VersionLabel.Parent = VersionBadge
 
-    -- 4. ส่วนของปุ่ม Control (_ , ▢ , X)
+    -- ปุ่มควบคุมหน้าต่าง (Minimize, Center, Close)
     local Controls = Instance.new("Frame")
     Controls.Size = UDim2.new(0, 110, 1, 0)
-    Controls.Position = UDim2.new(1, -5, 0, 0)
+    Controls.Position = UDim2.new(1, -10, 0, 0)
     Controls.AnchorPoint = Vector2.new(1, 0)
     Controls.BackgroundTransparency = 1
     Controls.ZIndex = 1117
     Controls.Parent = TopBar
-    
+
     local ControlLayout = Instance.new("UIListLayout")
     ControlLayout.FillDirection = Enum.FillDirection.Horizontal
     ControlLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
     ControlLayout.VerticalAlignment = Enum.VerticalAlignment.Center
     ControlLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    ControlLayout.Padding = UDim.new(0, 5)
+    ControlLayout.Padding = UDim.new(0, 6)
     ControlLayout.Parent = Controls
 
     local function ToggleUI()
-        -- 1. เช็คก่อนว่าสร้างเสร็จหรือยัง
         if not MainFrame or not StartBtn then return end
-
-        -- 2. สลับสถานะ (ถ้าเปิดให้ปิด ถ้าปิดให้เปิด)
+        CloseAllDropdowns()
         if MainFrame.Visible then
             MainFrame.Visible = false
             StartBtn.Visible = true
@@ -530,73 +554,103 @@ local MainCorner = Instance.new("UICorner")
             StartBtn.Visible = false
         end
     end
+    XPHub.ToggleUI = ToggleUI
 
-    local function CreatePremiumBtn(name, iconText, baseColor, lightColor, order, callback)
+    local function CreateWindowBtn(name, iconText, hoverColor, order, callback)
         local btnFrame = Instance.new("TextButton")
         btnFrame.Name = name
         btnFrame.LayoutOrder = order
-        btnFrame.Size = UDim2.new(0, 24, 0, 24)
-        btnFrame.BackgroundColor3 = baseColor
+        btnFrame.Size = UDim2.new(0, 28, 0, 28)
+        btnFrame.BackgroundColor3 = Colors.ControlBtnBg
+        btnFrame.AutoButtonColor = false
         btnFrame.Text = ""
         btnFrame.ZIndex = 9998
         btnFrame.Parent = Controls
-        Instance.new("UICorner", btnFrame).CornerRadius = UDim.new(0, 4)
-        local bStroke = Instance.new("UIStroke")
-        bStroke.Color = Colors.White
-        bStroke.Thickness = 1.5
-        bStroke.Parent = btnFrame
+        Instance.new("UICorner", btnFrame).CornerRadius = UDim.new(0, 7)
+        local stroke = AddStroke(btnFrame, Colors.Border, 1, 0.3)
+
         local icon = Instance.new("TextLabel")
         icon.Text = iconText
         icon.Size = UDim2.new(1, 0, 1, 0)
         icon.BackgroundTransparency = 1
-        icon.TextColor3 = Colors.White
-        icon.Font = Enum.Font.ArialBold
-        icon.TextSize = name == "Close" and 16 or 18
+        icon.TextColor3 = Colors.SubText
+        icon.Font = Enum.Font.GothamBold
+        icon.TextSize = 13
         icon.ZIndex = 9999
         icon.Parent = btnFrame
+
+        btnFrame.MouseEnter:Connect(function()
+            TweenService:Create(btnFrame, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+            TweenService:Create(icon, TweenInfo.new(0.15), {TextColor3 = Colors.White}):Play()
+            TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 1}):Play()
+        end)
+        btnFrame.MouseLeave:Connect(function()
+            TweenService:Create(btnFrame, TweenInfo.new(0.15), {BackgroundColor3 = Colors.ControlBtnBg}):Play()
+            TweenService:Create(icon, TweenInfo.new(0.15), {TextColor3 = Colors.SubText}):Play()
+            TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 0.3}):Play()
+        end)
+
         btnFrame.MouseButton1Click:Connect(callback)
     end
 
-    CreatePremiumBtn("Min", "_", Colors.ControlBlue, Colors.ControlBlueLight, 1, function() 
+    CreateWindowBtn("Min", "—", Colors.Accent, 1, function()
         ToggleUI()
     end)
-    CreatePremiumBtn("Res", "▢", Colors.ControlBlue, Colors.ControlBlueLight, 2, function() MainFrame.Position = UDim2.new(0.5, -310, 0.5, -250) end)
-    CreatePremiumBtn("Close", "X", Colors.CloseRed, Colors.CloseRedLight, 3, function() 
-        ResetAllSettings() -- สั่งล้างทุกอย่างและตัด Keybind
-        task.wait(0.1)     -- รอให้ Callback ทำงานเสร็จนิดนึง
-        ScreenGui:Destroy() -- ลบหน้าจอทิ้ง
+    CreateWindowBtn("Res", "▢", Colors.Accent, 2, function()
+        TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {
+            Position = UDim2.new(0.5, -MainFrame.AbsoluteSize.X / 2, 0.5, -MainFrame.AbsoluteSize.Y / 2)
+        }):Play()
+    end)
+    CreateWindowBtn("Close", "✕", Colors.CloseRed, 3, function()
+        ResetAllSettings()
+        task.wait(0.1)
+        ScreenGui:Destroy()
     end)
 
+    -- ==========================================
+    -- 📐 โครงสร้าง Body, Sidebar และ Container
+    -- ==========================================
     local Body = Instance.new("Frame")
-    Body.Size = UDim2.new(1, -6, 1, -40)
-    Body.Position = UDim2.new(0, 3, 0, 37)
-    Body.BackgroundColor3 = Colors.Background
+    Body.Name = "Body"
+    Body.Size = UDim2.new(1, 0, 1, -44)
+    Body.Position = UDim2.new(0, 0, 0, 44)
+    Body.BackgroundTransparency = 1
     Body.BorderSizePixel = 0
-    Body.ClipsDescendants = true 
+    Body.ClipsDescendants = true
     Body.ZIndex = 2
     Body.Parent = MainFrame
-    Instance.new("UICorner", Body).CornerRadius = UDim.new(0, 5)
 
-    -- Sidebar (Smart Scroll)
     local Sidebar = Instance.new("ScrollingFrame")
-    Sidebar.Size = UDim2.new(0, 150, 1, -10)
-    Sidebar.Position = UDim2.new(0, 5, 0, 5)
-    Sidebar.BackgroundColor3 = Colors.Sidebar
-    Sidebar.BorderSizePixel = 1
-    Sidebar.BorderColor3 = Colors.Border
-    Sidebar.ScrollBarThickness = 8
-    Sidebar.ScrollBarImageColor3 = Colors.ScrollBarThumb -- สีของตัวเลื่อน
-    Sidebar.ScrollingEnabled = false 
+    Sidebar.Name = "Sidebar"
+    Sidebar.Size = UDim2.new(0, 175, 1, -20)
+    Sidebar.Position = UDim2.new(0, 10, 0, 10)
+    Sidebar.BackgroundColor3 = Colors.SidebarBg
+    Sidebar.BorderSizePixel = 0
+    Sidebar.ScrollBarThickness = 3
+    Sidebar.ScrollBarImageColor3 = Colors.Accent
+    Sidebar.ScrollingEnabled = false
     Sidebar.ZIndex = 3
     Sidebar.Parent = Body
+
+    Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 10)
+    AddStroke(Sidebar, Colors.Border, 1, 0.2)
+
+    local SidebarPadding = Instance.new("UIPadding", Sidebar)
+    SidebarPadding.PaddingTop = UDim.new(0, 8)
+    SidebarPadding.PaddingBottom = UDim.new(0, 8)
+    SidebarPadding.PaddingLeft = UDim.new(0, 8)
+    SidebarPadding.PaddingRight = UDim.new(0, 8)
+
     local SidebarLayout = Instance.new("UIListLayout")
-    SidebarLayout.Padding = UDim.new(0, 2)
+    SidebarLayout.Padding = UDim.new(0, 5)
+    SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
     SidebarLayout.Parent = Sidebar
 
-
     SidebarLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        if SidebarLayout.AbsoluteContentSize.Y > Sidebar.AbsoluteSize.Y then
-            Sidebar.ScrollBarThickness = 5
+        local contentY = SidebarLayout.AbsoluteContentSize.Y + 16
+        Sidebar.CanvasSize = UDim2.new(0, 0, 0, contentY)
+        if contentY > Sidebar.AbsoluteSize.Y then
+            Sidebar.ScrollBarThickness = 3
             Sidebar.ScrollingEnabled = true
         else
             Sidebar.ScrollBarThickness = 0
@@ -605,32 +659,30 @@ local MainCorner = Instance.new("UICorner")
     end)
 
     local Container = Instance.new("Frame")
-    Container.Size = UDim2.new(1, -165, 1, -10)
-    Container.Position = UDim2.new(0, 160, 0, 5)
+    Container.Name = "Container"
+    Container.Size = UDim2.new(1, -205, 1, -20)
+    Container.Position = UDim2.new(0, 195, 0, 10)
     Container.BackgroundTransparency = 1
     Container.ZIndex = 3
     Container.Parent = Body
 
-    StartBtn = Instance.new("ImageButton") 
+    -- ==========================================
+    -- 🔘 ปุ่มลอยเปิดเมนู (Floating Start Button)
+    -- ==========================================
+    StartBtn = Instance.new("ImageButton")
     StartBtn.Name = "StartBtn"
-    
-    -- [จุดสำคัญ] เปลี่ยน Size เป็นแบบ Scale (เช่น 0.08 หรือ 8% ของความกว้างจอ)
-    -- และใส่ Offset เป็น 0 ทั้งหมด
-    StartBtn.Size = UDim2.new(0.08, 0, 0.08, 0) 
-    
-    -- ใช้ UIAspectRatioConstraint เพื่อให้ปุ่มเป็นสี่เหลี่ยมจัตุรัส 1:1 เสมอ
-    local AspectRatio = Instance.new("UIAspectRatioConstraint")
-    AspectRatio.AspectRatio = 1
-    AspectRatio.DominantAxis = Enum.DominantAxis.Width
-    AspectRatio.Parent = StartBtn
-
+    StartBtn.Size = UDim2.new(0, 52, 0, 52)
     StartBtn.AnchorPoint = Vector2.new(0, 0)
-    StartBtn.Position = UDim2.new(0.5, 0, 0.05, 0) -- วางกึ่งกลางจอ 5% จากขอบบน
-    StartBtn.BackgroundTransparency = 1
+    StartBtn.Position = UDim2.new(0.5, -26, 0.06, 0)
+    StartBtn.BackgroundColor3 = Colors.TopBarBg
+    StartBtn.BackgroundTransparency = 0.1
     StartBtn.Image = "rbxassetid://106080187166557"
     StartBtn.Visible = false
     StartBtn.ZIndex = 2000
     StartBtn.Parent = ScreenGui
+
+    Instance.new("UICorner", StartBtn).CornerRadius = UDim.new(0, 14)
+    local StartStroke = AddStroke(StartBtn, Colors.Accent, 1.8, 0.2)
 
     StartBtn.MouseButton1Click:Connect(function()
         if not wasDragging then
@@ -638,1520 +690,1531 @@ local MainCorner = Instance.new("UICorner")
         end
     end)
 
-    
-
     StartBtn.MouseEnter:Connect(function()
-        TweenService:Create(StartBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Rotation = 15, -- หมุนไปทางขวา 15 องศา
-            -- Size เท่าเดิม ไม่ต้องใส่เพื่อให้ปุ่มไม่ขยาย
+        TweenService:Create(StartBtn, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 56, 0, 56),
+            BackgroundColor3 = Colors.CardHover
         }):Play()
+        TweenService:Create(StartStroke, TweenInfo.new(0.2), {Color = Colors.AccentLight, Transparency = 0}):Play()
     end)
 
-    -- เมื่อเมาส์ออก (หรือปล่อยนิ้ว)
     StartBtn.MouseLeave:Connect(function()
-        TweenService:Create(StartBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Rotation = 0, -- กลับมาที่องศาเดิม (0)
+        TweenService:Create(StartBtn, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 52, 0, 52),
+            BackgroundColor3 = Colors.TopBarBg
         }):Play()
+        TweenService:Create(StartStroke, TweenInfo.new(0.2), {Color = Colors.Accent, Transparency = 0.2}):Play()
     end)
 
-    -- รันระบบลาก (ใช้ฟังก์ชันตัวลื่นที่คุณชอบ)
     MakeDraggableStartBtn(StartBtn, StartBtn)
     MakeDraggable(MainFrame, TopBar)
 
+    -- ==========================================
+    -- 📁 ฟังก์ชันสร้าง Tab
+    -- ==========================================
+    function window:AddTab(TabConfig)
+        local tab = {CountSection = 0}
 
-        function window:AddTab(TabConfig)
-            local tab = {CountSection = 0}
-            
-            -- สร้างปุ่ม Tab ใน Sidebar
-            local TabBtn = Instance.new("TextButton")
-            TabBtn.Size = UDim2.new(1, 0, 0, 40)
-            TabBtn.BackgroundColor3 = Colors.Sidebar
-            TabBtn.Text = "" -- เราจะไม่ใช้ Text ของปุ่มโดยตรง เพื่อควบคุม Icon ได้อิสระ
-            TabBtn.BorderSizePixel = 0
-            TabBtn.ZIndex = 4
-            TabBtn.Parent = Sidebar
+        local TabBtn = Instance.new("TextButton")
+        TabBtn.Name = TabConfig.Name .. "_Tab"
+        TabBtn.Size = UDim2.new(1, 0, 0, 38)
+        TabBtn.BackgroundColor3 = Colors.CardBg
+        TabBtn.BackgroundTransparency = 1
+        TabBtn.AutoButtonColor = false
+        TabBtn.Text = ""
+        TabBtn.BorderSizePixel = 0
+        TabBtn.ZIndex = 4
+        TabBtn.Parent = Sidebar
+        Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
 
-            -- ตัวครอบ Icon และ Text เพื่อจัดกึ่งกลาง/ชิดซ้าย
-            local TabContent = Instance.new("Frame")
-            TabContent.Size = UDim2.new(1, 0, 1, 0)
-            TabContent.BackgroundTransparency = 1
-            TabContent.Parent = TabBtn
+        -- แถบสีฟ้าบอกสถานะ Active
+        local ActiveBar = Instance.new("Frame")
+        ActiveBar.Name = "ActiveBar"
+        ActiveBar.Size = UDim2.new(0, 3, 0, 18)
+        ActiveBar.Position = UDim2.new(0, 0, 0.5, 0)
+        ActiveBar.AnchorPoint = Vector2.new(0, 0.5)
+        ActiveBar.BackgroundColor3 = Colors.Accent
+        ActiveBar.BackgroundTransparency = 1
+        ActiveBar.BorderSizePixel = 0
+        ActiveBar.ZIndex = 6
+        ActiveBar.Parent = TabBtn
+        Instance.new("UICorner", ActiveBar).CornerRadius = UDim.new(1, 0)
 
-            local TabIcon = Instance.new("ImageLabel")
-            TabIcon.Name = "Icon"
-            TabIcon.Size = UDim2.new(0, 20, 0, 20)
-            TabIcon.Position = UDim2.new(0, 10, 0.5, -10)
-            TabIcon.Image = TabConfig.Icon or "" -- รับค่า Icon จาก Config
-            TabIcon.ImageColor3 = Color3.fromRGB(80, 80, 80) -- สีตอนปกติ
-            TabIcon.BackgroundTransparency = 1
-            TabIcon.ZIndex = 5
-            TabIcon.Parent = TabContent
+        local TabContent = Instance.new("Frame")
+        TabContent.Name = "Frame"
+        TabContent.Size = UDim2.new(1, 0, 1, 0)
+        TabContent.BackgroundTransparency = 1
+        TabContent.Parent = TabBtn
 
-            local TabLabel = Instance.new("TextLabel")
-            TabLabel.Name = "Label"
-            TabLabel.Text = TabConfig.Name
-            TabLabel.Size = UDim2.new(1, -40, 1, 0)
-            TabLabel.Position = UDim2.new(0, 38, 0, 0)
-            TabLabel.Font = Enum.Font.ArialBold
-            TabLabel.TextSize = 14
-            TabLabel.TextColor3 = Colors.Text -- สีตอนปกติ
-            TabLabel.TextXAlignment = Enum.TextXAlignment.Left
-            TabLabel.BackgroundTransparency = 1
-            TabLabel.ZIndex = 5
-            TabLabel.Parent = TabContent
+        local TabIcon = Instance.new("ImageLabel")
+        TabIcon.Name = "Icon"
+        TabIcon.Size = UDim2.new(0, 18, 0, 18)
+        TabIcon.Position = UDim2.new(0, 12, 0.5, -9)
+        TabIcon.Image = TabConfig.Icon or ""
+        TabIcon.ImageColor3 = Colors.SubText
+        TabIcon.BackgroundTransparency = 1
+        TabIcon.ZIndex = 5
+        TabIcon.Parent = TabContent
 
-            -- หน้า Page ของแต่ละ Tab
-            local Page = Instance.new("ScrollingFrame")
-            Page.Size = UDim2.new(1, 0, 1, 0)
-            Page.BackgroundTransparency = 1
-            Page.Visible = false
-            Page.ScrollBarThickness = 8 -- ให้เห็นแถบเลื่อนสไตล์ XP
-            Page.ScrollBarImageColor3 = Colors.ScrollBarThumb
-            Page.BorderSizePixel = 0
-            Page.ScrollingEnabled = true -- เปิดไว้ตลอดเพื่อความชัวร์
-            Page.CanvasSize = UDim2.new(0, 0, 0, 0) -- เดี๋ยว AutomaticSize จัดการเอง
-            Page.AutomaticCanvasSize = Enum.AutomaticSize.Y -- บังคับให้ขยายตามเนื้อหา
-            Page.ZIndex = 4
-            Page.ClipsDescendants = true 
-            Page.Parent = Container
-                      
-            local PageLayout = Instance.new("UIListLayout")
-            PageLayout.Padding = UDim.new(0, 15)
-            PageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-            PageLayout.SortOrder = Enum.SortOrder.LayoutOrder 
-            PageLayout.Parent = Page
-            
-            -- [จัดการ Padding ของหน้า Page ให้ชิดเส้นซ้ายและบน]
-            local PagePadding = Page:FindFirstChildOfClass("UIPadding") or Instance.new("UIPadding", Page)
-            PagePadding.PaddingTop = UDim.new(0, 0)    -- ระยะห่างจากขอบบน (กำลังดีไม่ชิดจนน่าเกลียด)
-            PagePadding.PaddingLeft = UDim.new(0, 0)   -- [จุดสำคัญ] ขยับให้เกือบติดเส้นซ้ายตามที่ต้องการ
-            PagePadding.PaddingBottom = UDim.new(0, 0) -- เผื่อพื้นที่ด้านล่างเวลาเลื่อนสุด
+        local TabLabel = Instance.new("TextLabel")
+        TabLabel.Name = "Label"
+        TabLabel.Text = TabConfig.Name
+        TabLabel.Size = UDim2.new(1, -42, 1, 0)
+        TabLabel.Position = UDim2.new(0, 38, 0, 0)
+        TabLabel.Font = Enum.Font.GothamMedium
+        TabLabel.TextSize = 13
+        TabLabel.TextColor3 = Colors.SubText
+        TabLabel.TextXAlignment = Enum.TextXAlignment.Left
+        TabLabel.BackgroundTransparency = 1
+        TabLabel.ZIndex = 5
+        TabLabel.Parent = TabContent
 
+        -- หน้า Page ของแต่ละ Tab
+        local Page = Instance.new("ScrollingFrame")
+        Page.Name = TabConfig.Name .. "_Page"
+        Page.Size = UDim2.new(1, 0, 1, 0)
+        Page.BackgroundTransparency = 1
+        Page.Visible = false
+        Page.ScrollBarThickness = 4
+        Page.ScrollBarImageColor3 = Colors.Accent
+        Page.BorderSizePixel = 0
+        Page.ScrollingEnabled = true
+        Page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        Page.ZIndex = 4
+        Page.ClipsDescendants = true
+        Page.Parent = Container
 
-            -- 3. หัวข้อใหญ่
-            local PageTitle = Instance.new("TextLabel")
-            PageTitle.Name = "PageTitle"
-            PageTitle.Size = UDim2.new(0.99, 0, 0, 45) -- ปรับกว้างเกือบเต็มพื้นที่
-            PageTitle.Text = TabConfig.Name
-            PageTitle.Font = Enum.Font.ArialBold
-            PageTitle.TextSize = 32 
-            PageTitle.TextColor3 = Colors.Text
-            PageTitle.TextXAlignment = Enum.TextXAlignment.Left
-            PageTitle.BackgroundTransparency = 1
-            PageTitle.ZIndex = 5
-            PageTitle.LayoutOrder = -100
-            PageTitle.Parent = Page
+        local PageLayout = Instance.new("UIListLayout")
+        PageLayout.Padding = UDim.new(0, 12)
+        PageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        PageLayout.Parent = Page
 
-            -- ฟังก์ชันจัดการตอนคลิกเปลี่ยน Tab (Active / Inactive)
-            local function UpdateTabVisuals()
-                -- วนลูป Reset ทุกปุ่มใน Sidebar
-                for _, b in pairs(Sidebar:GetChildren()) do
-                    if b:IsA("TextButton") then
-                        b.BackgroundColor3 = Colors.Sidebar
-                        if b:FindFirstChild("Frame") then
-                            b.Frame.Label.TextColor3 = Colors.Text
-                            b.Frame.Icon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-                        end
+        local PagePadding = Instance.new("UIPadding", Page)
+        PagePadding.PaddingTop = UDim.new(0, 2)
+        PagePadding.PaddingLeft = UDim.new(0, 2)
+        PagePadding.PaddingRight = UDim.new(0, 8)
+        PagePadding.PaddingBottom = UDim.new(0, 14)
+
+        -- หัวข้อใหญ่ประจำหน้า
+        local PageHeaderFrame = Instance.new("Frame")
+        PageHeaderFrame.Name = "PageHeader"
+        PageHeaderFrame.Size = UDim2.new(1, -4, 0, 34)
+        PageHeaderFrame.BackgroundTransparency = 1
+        PageHeaderFrame.LayoutOrder = -100
+        PageHeaderFrame.ZIndex = 5
+        PageHeaderFrame.Parent = Page
+
+        local PageTitle = Instance.new("TextLabel")
+        PageTitle.Name = "PageTitle"
+        PageTitle.Size = UDim2.new(1, 0, 0, 26)
+        PageTitle.Text = TabConfig.Name
+        PageTitle.Font = Enum.Font.GothamBold
+        PageTitle.TextSize = 20
+        PageTitle.TextColor3 = Colors.Text
+        PageTitle.TextXAlignment = Enum.TextXAlignment.Left
+        PageTitle.BackgroundTransparency = 1
+        PageTitle.ZIndex = 5
+        PageTitle.Parent = PageHeaderFrame
+
+        local PageUnderline = Instance.new("Frame")
+        PageUnderline.Size = UDim2.new(0, 36, 0, 3)
+        PageUnderline.Position = UDim2.new(0, 0, 1, -3)
+        PageUnderline.BackgroundColor3 = Colors.Accent
+        PageUnderline.BorderSizePixel = 0
+        PageUnderline.ZIndex = 5
+        PageUnderline.Parent = PageHeaderFrame
+        Instance.new("UICorner", PageUnderline).CornerRadius = UDim.new(1, 0)
+
+        local function UpdateTabVisuals()
+            for _, b in pairs(Sidebar:GetChildren()) do
+                if b:IsA("TextButton") then
+                    TweenService:Create(b, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+                    if b:FindFirstChild("ActiveBar") then
+                        TweenService:Create(b.ActiveBar, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+                    end
+                    if b:FindFirstChild("Frame") then
+                        b.Frame.Label.Font = Enum.Font.GothamMedium
+                        TweenService:Create(b.Frame.Label, TweenInfo.new(0.2), {TextColor3 = Colors.SubText}):Play()
+                        TweenService:Create(b.Frame.Icon, TweenInfo.new(0.2), {ImageColor3 = Colors.SubText}):Play()
                     end
                 end
-                -- ตั้งค่าปุ่มปัจจุบันเป็น Active
-                TabBtn.BackgroundColor3 = Colors.White
-                TabLabel.TextColor3 = Colors.TitleBarDark -- เปลี่ยนข้อความเป็นสีน้ำเงินตอน Active
-                TabIcon.ImageColor3 = Colors.TitleBarDark -- เปลี่ยนสี Icon ตอน Active
             end
 
-            TabBtn.MouseButton1Click:Connect(function()
-                CloseAllDropdowns()
-                for _, p in pairs(Container:GetChildren()) do 
-                    if p:IsA("ScrollingFrame") then p.Visible = false end 
-                end
-                UpdateTabVisuals()
-                Page.Visible = true
-            end)
-
-            -- เปิดหน้าแรกอัตโนมัติ
-            if window.CountTab == 0 then
-                Page.Visible = true
-                UpdateTabVisuals()
-            end
-            window.CountTab = window.CountTab + 1
-
-            function tab:AddSection(Title, Description, IconID)
-                local sectionItems = {}
-                local SectionFrame = Instance.new("Frame")
-                SectionFrame.Size = UDim2.new(0.98, 0, 0, 60) -- ขนาดเริ่มต้นเล็กๆ เดี๋ยว AutomaticSize จะปรับเอง
-                SectionFrame.BackgroundTransparency = 1
-                SectionFrame.ZIndex = 5
-                SectionFrame.ClipsDescendants = false -- เปลี่ยนเป็น false เพื่อให้ Effect บางอย่างล้นได้ถ้าจำเป็น
-                tab.CountSection = tab.CountSection + 1
-                SectionFrame.LayoutOrder = tab.CountSection
-                SectionFrame.Parent = Page
-                
-                local SectionLayout = Instance.new("UIListLayout")
-                SectionLayout.Padding = UDim.new(0, 5) -- เพิ่ม Padding ระหว่าง Sections ให้ดูไม่แน่นเกินไป
-                SectionLayout.Parent = SectionFrame
-
-                -- ### ส่วนหัว Section ที่ปรับปรุงใหม่ให้โดดเด่น ###
-                local HeaderContainer = Instance.new("Frame")
-                HeaderContainer.Size = SizeItem.TitleItem
-                HeaderContainer.BackgroundColor3 = Color3.fromRGB(220, 225, 235) -- สีฟ้าอ่อนๆ สไตล์ XP Task Pane
-                HeaderContainer.BorderSizePixel = 0
-                HeaderContainer.ZIndex = 6
-                HeaderContainer.Parent = SectionFrame
-                
-                local HeaderCorner = Instance.new("UICorner", HeaderContainer)
-                HeaderCorner.CornerRadius = UDim.new(0, 6)
-                
-                -- เส้นขอบให้ดูนูน (XP Style)
-                local HeaderStroke = Instance.new("UIStroke", HeaderContainer)
-                HeaderStroke.Color = Colors.TitleBarLight
-                HeaderStroke.Thickness = 1.2
-                HeaderStroke.Transparency = 0.5
-
-                -- Icon ของ Section
-                if IconID then
-                    local SecIcon = Instance.new("ImageLabel")
-                    SecIcon.Size = UDim2.new(0, 24, 0, 24)
-                    SecIcon.Position = UDim2.new(0, 10, 0.5, -12)
-                    SecIcon.Image = IconID
-                    SecIcon.BackgroundTransparency = 1
-                    SecIcon.ImageColor3 = Colors.TitleBarDark
-                    SecIcon.ZIndex = 7
-                    SecIcon.Parent = HeaderContainer
-                end
-
-                local HeaderTitle = Instance.new("TextLabel")
-                HeaderTitle.Size = UDim2.new(1, -50, 0, 24)
-                HeaderTitle.Position = IconID and UDim2.new(0, 40, 0, 5) or UDim2.new(0, 12, 0, 5)
-                HeaderTitle.Text = Title
-                HeaderTitle.Font = Enum.Font.ArialBold
-                HeaderTitle.TextSize = 18
-                HeaderTitle.TextColor3 = Colors.TitleBarDark -- ใช้สีน้ำเงินเข้มให้ดูเป็นหัวข้อหลัก
-                HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
-                HeaderTitle.BackgroundTransparency = 1
-                HeaderTitle.ZIndex = 7
-                HeaderTitle.Parent = HeaderContainer
-
-                if Description then
-                    local Desc = Instance.new("TextLabel")
-                    Desc.Size = UDim2.new(1, -50, 0, 15)
-                    Desc.Position = IconID and UDim2.new(0, 40, 0, 25) or UDim2.new(0, 12, 0, 25)
-                    Desc.Text = Description
-                    Desc.Font = Enum.Font.Arial
-                    Desc.TextSize = 12
-                    Desc.TextColor3 = Colors.SubText
-                    Desc.TextXAlignment = Enum.TextXAlignment.Left
-                    Desc.BackgroundTransparency = 1
-                    Desc.ZIndex = 7
-                    Desc.Parent = HeaderContainer
-                end
-
-                -- ปรับขนาด SectionFrame อัตโนมัติ
-                SectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                    SectionFrame.Size = UDim2.new(0.98, 0, 0, SectionLayout.AbsoluteContentSize.Y + 5)
-                end)
-
-
-                -- Component: AddToggleSwitch (เวอร์ชันรองรับ Visual Sync และ Save/Load)
-                function sectionItems:AddToggleSwitch(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4 
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -80, 0, 24)
-                    TTitle.Position = UDim2.new(0, 15, 0, 10)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-                    
-                    local TDesc = Instance.new("TextLabel")
-                    TDesc.Text = Config.Description or ""
-                    TDesc.Size = UDim2.new(1, -80, 0, 20)
-                    TDesc.Position = UDim2.new(0, 15, 0, 32)
-                    TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
-                    TDesc.TextColor3 = Colors.SubText
-                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
-                    TDesc.BackgroundTransparency = 1
-                    TDesc.ZIndex = 8
-                    TDesc.Parent = Row
-
-                    local SwitchBg = Instance.new("TextButton")
-                    SwitchBg.Size = UDim2.new(0, 50, 0, 26)
-                    SwitchBg.Position = UDim2.new(1, -65, 0.5, -13)
-                    SwitchBg.BackgroundColor3 = Config.Default and Colors.SwitchOn or Colors.SwitchOff
-                    SwitchBg.Text = ""
-                    SwitchBg.ZIndex = 9
-                    SwitchBg.Parent = Row
-                    Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(0, 13)
-                    
-                    local Knob = Instance.new("Frame")
-                    Knob.Size = UDim2.new(0, 22, 0, 22)
-                    Knob.Position = Config.Default and UDim2.new(1, -24, 0.5, -11) or UDim2.new(0, 2, 0.5, -11)
-                    Knob.BackgroundColor3 = Colors.White
-                    Knob.ZIndex = 10
-                    Knob.Parent = SwitchBg
-                    Instance.new("UICorner", Knob).CornerRadius = UDim.new(0, 10)
-
-                    local state = Config.Default
-                    UpdateState(Config.ID, state) -- บันทึกค่าเริ่มต้นลงตาราง Config
-
-                    -- ฟังก์ชันสำหรับอัปเดตหน้าตา UI (ใช้ตอนคลิก และ ตอนโหลด Config)
-                    local function VisualUpdate(val)
-                        local targetPos = val and UDim2.new(1, -24, 0.5, -11) or UDim2.new(0, 2, 0.5, -11)
-                        local targetColor = val and Colors.SwitchOn or Colors.SwitchOff
-                        TweenService:Create(Knob, TweenInfo.new(0.2), {Position = targetPos}):Play()
-                        TweenService:Create(SwitchBg, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
-                    end
-
-                    -- บันทึกลงในระบบ Objects เพื่อให้ ApplySettings วิ่งมาหาเจอ
-                    if Config.ID and XPHub.Objects then
-                        XPHub.Objects[Config.ID] = {
-                            Type = "Toggle",
-                            Instance = SwitchBg,
-                            Knob = Knob,
-                            Update = function(val)
-                                state = val -- อัปเดตตัวแปรภายใน
-                                VisualUpdate(val)
-                            end
-                        }
-                    end
-
-                    SwitchBg.MouseButton1Click:Connect(function()
-                        state = not state
-                        VisualUpdate(state)
-                        UpdateState(Config.ID, state) -- บันทึกค่าใหม่ลงตาราง
-                        Config.Callback(state)
-                    end)
-                end
-
-                -- Component: AddSlider (เวอร์ชันรองรับ Visual Sync และ Save/Load)
-                function sectionItems:AddSlider(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -160, 0, 24)
-                    TTitle.Position = UDim2.new(0, 15, 0, 12)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextColor3 = Colors.Text
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-                    
-                    local TDesc = Instance.new("TextLabel")
-                    TDesc.Text = Config.Description or ""
-                    TDesc.Size = UDim2.new(1, -160, 0, 20)
-                    TDesc.Position = UDim2.new(0, 15, 0, 34)
-                    TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
-                    TDesc.TextColor3 = Colors.SubText
-                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
-                    TDesc.BackgroundTransparency = 1
-                    TDesc.ZIndex = 8
-                    TDesc.Parent = Row
-
-                    local SliderContainer = Instance.new("Frame")
-                    SliderContainer.Size = UDim2.new(0, 140, 0, 40)
-                    SliderContainer.Position = UDim2.new(1, -150, 0.5, -15)
-                    SliderContainer.BackgroundTransparency = 1
-                    SliderContainer.ZIndex = 9
-                    SliderContainer.Parent = Row
-
-                    local ValueLabel = Instance.new("TextLabel")
-                    ValueLabel.Size = UDim2.new(1, 0, 0, 20)
-                    ValueLabel.Position = UDim2.new(0, 0, 0, -5)
-                    ValueLabel.BackgroundTransparency = 1
-                    ValueLabel.Text = tostring(Config.Default or Config.Min) .. " | " .. tostring(Config.Max)
-                    ValueLabel.TextColor3 = Colors.Text
-                    ValueLabel.Font = Enum.Font.ArialBold
-                    ValueLabel.TextSize = 14
-                    ValueLabel.ZIndex = 10
-                    ValueLabel.Parent = SliderContainer
-
-                    local SliderBack = Instance.new("Frame")
-                    SliderBack.Size = UDim2.new(1, 0, 0, 6)
-                    SliderBack.Position = UDim2.new(0, 0, 0.7, 0)
-                    SliderBack.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-                    SliderBack.BorderSizePixel = 0
-                    SliderBack.ZIndex = 10
-                    SliderBack.Parent = SliderContainer
-                    Instance.new("UICorner", SliderBack)
-
-                    local SliderFill = Instance.new("Frame")
-                    SliderFill.Size = UDim2.new(math.clamp(((Config.Default or Config.Min) - Config.Min) / (Config.Max - Config.Min), 0, 1), 0, 1, 0)
-                    SliderFill.BackgroundColor3 = Colors.SwitchOn
-                    SliderFill.BorderSizePixel = 0
-                    SliderFill.ZIndex = 11
-                    SliderFill.Parent = SliderBack
-                    Instance.new("UICorner", SliderFill)
-
-                    local Handle = Instance.new("Frame")
-                    Handle.Size = UDim2.new(0, 16, 0, 16)
-                    Handle.AnchorPoint = Vector2.new(0.5, 0.5)
-                    Handle.Position = UDim2.new(SliderFill.Size.X.Scale, 0, 0.5, 0)
-                    Handle.BackgroundColor3 = Colors.White
-                    Handle.ZIndex = 12
-                    Handle.Active = true
-                    Handle.Parent = SliderBack
-                    Instance.new("UICorner", Handle).CornerRadius = UDim.new(1, 0)
-                    local HandleStroke = Instance.new("UIStroke", Handle)
-                    HandleStroke.Color = Colors.Border
-                    HandleStroke.Thickness = 1
-
-                    local dragging = false
-                    UpdateState(Config.ID, Config.Default or Config.Min)
-
-                    -- ฟังก์ชันสำหรับอัปเดตหน้าตา Slider (Visual Update)
-                    local function VisualUpdate(val)
-                        local relativeX = math.clamp((val - Config.Min) / (Config.Max - Config.Min), 0, 1)
-                        SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
-                        Handle.Position = UDim2.new(relativeX, 0, 0.5, 0)
-                        ValueLabel.Text = tostring(val) .. " | " .. tostring(Config.Max)
-                    end
-
-                    if Config.ID and XPHub.Objects then
-                            XPHub.Objects[Config.ID] = {
-                                Type = "Slider",
-                                Instance = SliderFill,
-                                Handle = Handle,
-                                Label = ValueLabel,
-                                Config = Config,
-                                Callback = Config.Callback, -- ### เพิ่มบรรทัดนี้: เก็บฟังก์ชันสั่งวิ่งไว้ ###
-                                Update = function(val)
-                                    local relativeX = math.clamp((val - Config.Min) / (Config.Max - Config.Min), 0, 1)
-                                    SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
-                                    Handle.Position = UDim2.new(relativeX, 0, 0.5, 0)
-                                    ValueLabel.Text = tostring(val) .. " | " .. tostring(Config.Max)
-                                end
-                            }
-                        end
-
-                    local function UpdateSlider(input)
-                        local mouseLocation = input.Position
-                        local relativeX = math.clamp((mouseLocation.X - SliderBack.AbsolutePosition.X) / SliderBack.AbsoluteSize.X, 0, 1)
-                        local value = math.floor(Config.Min + (Config.Max - Config.Min) * relativeX)
-                        
-                        VisualUpdate(value)
-                        UpdateState(Config.ID, value)
-                        Config.Callback(value)
-                    end
-
-                    SliderBack.InputBegan:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                            dragging = true
-                            UpdateSlider(input)
-                        end
-                    end)
-
-                    Handle.InputBegan:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                            dragging = true
-                        end
-                    end)
-
-                    UserInputService.InputEnded:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                            dragging = false
-                        end
-                    end)
-
-                    UserInputService.InputChanged:Connect(function(input)
-                        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                            UpdateSlider(input)
-                        end
-                    end)
-                end
-
-                -- Component: AddDropdown (เวอร์ชันรองรับ Visual Sync และ Auto-Update)
-                function sectionItems:AddDropdown(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -210, 0, 24)
-                    TTitle.Position = UDim2.new(0, 15, 0, 12)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextColor3 = Colors.Text
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-                    
-                    local TDesc = Instance.new("TextLabel")
-                    TDesc.Text = Config.Description or ""
-                    TDesc.Size = UDim2.new(1, -210, 0, 20)
-                    TDesc.Position = UDim2.new(0, 15, 0, 34)
-                    TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
-                    TDesc.TextColor3 = Colors.SubText
-                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
-                    TDesc.BackgroundTransparency = 1
-                    TDesc.ZIndex = 8
-                    TDesc.Parent = Row
-
-                    local Frame = Instance.new("Frame")
-                    Frame.Size = UDim2.new(0, 180, 0, 32)
-                    Frame.Position = UDim2.new(1, -190, 0.5, -16)
-                    Frame.BackgroundColor3 = Colors.White
-                    Frame.BorderSizePixel = 1
-                    Frame.BorderColor3 = Colors.XPInputBorder
-                    Frame.ZIndex = 10
-                    Frame.Parent = Row
-
-                    local Label = Instance.new("TextLabel")
-                    Label.Text = Config.Default or "เลือก..."
-                    Label.Size = UDim2.new(1, -37, 1, 0)
-                    Label.Position = UDim2.new(0, 8, 0, 0)
-                    Label.BackgroundTransparency = 1
-                    Label.TextColor3 = Colors.Text
-                    Label.Font = Enum.Font.Arial
-                    Label.TextSize = 14
-                    Label.TextXAlignment = Enum.TextXAlignment.Left
-                    Label.ClipsDescendants = true
-                    Label.ZIndex = 11
-                    Label.Parent = Frame
-
-                    local ArrowBtn = Instance.new("Frame")
-                    ArrowBtn.Size = UDim2.new(0, 23, 0, 23)
-                    ArrowBtn.Position = UDim2.new(1, -28, 0, 5)
-                    ArrowBtn.BackgroundColor3 = Colors.ButtonClassic
-                    ArrowBtn.BorderSizePixel = 1
-                    ArrowBtn.BorderColor3 = Color3.fromRGB(150, 150, 150)
-                    ArrowBtn.ZIndex = 11
-                    ArrowBtn.Parent = Frame
-                    Instance.new("UICorner", ArrowBtn).CornerRadius = UDim.new(0, 5)
-                    
-                    local ArrowIcon = Instance.new("ImageLabel")
-                    ArrowIcon.Image = "rbxassetid://74976956154520"
-                    ArrowIcon.Size = UDim2.new(0, 14, 0, 14)
-                    ArrowIcon.Position = UDim2.new(0.23, 0, 0.24, 0)
-                    ArrowIcon.BackgroundTransparency = 1
-                    ArrowIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-                    ArrowIcon.ZIndex = 12
-                    ArrowIcon.Parent = ArrowBtn
-
-                    local DropdownClickBtn = Instance.new("TextButton")
-                    DropdownClickBtn.Size = UDim2.new(1, 0, 1, 0)
-                    DropdownClickBtn.BackgroundTransparency = 1
-                    DropdownClickBtn.Text = ""
-                    DropdownClickBtn.ZIndex = 15
-                    DropdownClickBtn.Parent = Frame
-
-                    local List = Instance.new("Frame")
-                    List.Name = "DropdownList"
-                    List.BackgroundColor3 = Colors.White
-                    List.BorderSizePixel = 1
-                    List.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                    List.ZIndex = 1000
-                    List.Visible = false
-                    List.Parent = MainFrame 
-
-                    local SearchBox = Instance.new("TextBox")
-                    SearchBox.Size = UDim2.new(1, -4, 0, 28)
-                    SearchBox.Position = UDim2.new(0, 2, 0, 2)
-                    SearchBox.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-                    SearchBox.PlaceholderText = "ค้นหา..."
-                    SearchBox.Text = ""
-                    SearchBox.TextSize = 14
-                    SearchBox.ZIndex = 1001
-                    SearchBox.Parent = List
-
-                    local ItemScroll = Instance.new("ScrollingFrame")
-                    ItemScroll.Size = UDim2.new(1, 0, 1, -32)
-                    ItemScroll.Position = UDim2.new(0, 0, 0, 32)
-                    ItemScroll.BackgroundTransparency = 1
-                    ItemScroll.BorderSizePixel = 0
-                    ItemScroll.ScrollBarThickness = 6
-                    ItemScroll.ScrollBarImageColor3 = Colors.ScrollBarThumb
-                    ItemScroll.ZIndex = 1001
-                    ItemScroll.Parent = List
-                    local ItemListLayout = Instance.new("UIListLayout", ItemScroll)
-
-                    local syncConnection
-                    local currentlySelected = Config.Default or nil 
-
-                    local function UpdateListPosition()
-                        if List.Visible then
-                            local absPos = Frame.AbsolutePosition
-                            local mainAbsPos = MainFrame.AbsolutePosition
-                            local contentHeight = ItemListLayout.AbsoluteContentSize.Y
-                            ItemScroll.CanvasSize = UDim2.new(0, 0, 0, contentHeight + 5)
-                            local dynamicHeight = math.clamp(contentHeight + 34, 60, 200)
-                            List.Size = UDim2.new(0, Frame.AbsoluteSize.X, 0, dynamicHeight)
-                            List.Position = UDim2.new(0, absPos.X - mainAbsPos.X, 0, absPos.Y - mainAbsPos.Y + Frame.AbsoluteSize.Y)
-                        end
-                    end
-
-                    local function Populate(filter)
-                        for _, child in pairs(ItemScroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-                        for _, item in pairs(Config.Options or {}) do
-                            if filter == "" or string.find(string.lower(tostring(item)), string.lower(tostring(filter))) then
-                                local itemBtn = Instance.new("TextButton")
-                                itemBtn.Size = UDim2.new(1, 0, 0, 28)
-                                itemBtn.BorderSizePixel = 0
-                                itemBtn.Text = "  " .. tostring(item)
-                                itemBtn.TextSize = 14
-                                itemBtn.TextXAlignment = Enum.TextXAlignment.Left
-                                itemBtn.ZIndex = 1002
-                                itemBtn.Parent = ItemScroll
-                                
-                                itemBtn.BackgroundColor3 = (item == currentlySelected) and Colors.DropdownSelectBlue or Colors.White
-                                itemBtn.TextColor3 = (item == currentlySelected) and Colors.White or Colors.Text
-                                
-                                itemBtn.MouseButton1Click:Connect(function()
-                                    Label.Text = item
-                                    currentlySelected = item 
-                                    List.Visible = false
-                                    activeDropdownList = nil
-                                    if syncConnection then syncConnection:Disconnect() end
-                                    UpdateState(Config.ID, item)
-                                    Config.Callback(item)
-                                end)
-                            end
-                        end
-                    end
-
-                    SearchBox:GetPropertyChangedSignal("Text"):Connect(function() Populate(SearchBox.Text) end)
-
-                    local dropdownFunc = {}
-
-                    -- ฟังก์ชัน Refresh รายการ (ใช้ใน Tab 2)
-                    function dropdownFunc:Refresh(newList)
-                        Config.Options = newList
-                        Populate("") 
-                    end
-
-                    -- ฟังก์ชันสำหรับ Update หน้าตา UI (ใช้ตอน Load Config)
-                    function dropdownFunc:Update(val)
-                        Label.Text = tostring(val)
-                        currentlySelected = val
-                    end
-
-                    -- ฟังก์ชัน Set ค่าพร้อมรัน Callback
-                    function dropdownFunc:Set(val)
-                        Label.Text = tostring(val)
-                        currentlySelected = val
-                        UpdateState(Config.ID, val)
-                        Config.Callback(val)
-                    end
-
-                    if Config.ID then
-                        XPHub.Objects[Config.ID] = {
-                            Update = function(val) 
-                                Label.Text = tostring(val) 
-                                currentlySelected = val -- อัปเดตตัวแปรภายในด้วย
-                            end,
-                            -- ดักจับ Error ถ้าลืมใส่ Callback ตอนสร้าง
-                            Callback = Config.Callback or function() end 
-                        }
-                    end
-
-                    DropdownClickBtn.MouseButton1Click:Connect(function()
-                        if List.Visible then
-                            List.Visible = false
-                            activeDropdownList = nil
-                            if syncConnection then syncConnection:Disconnect() end
-                        else
-                            CloseAllDropdowns() 
-                            List.Visible = true
-                            activeDropdownList = List
-                            ItemScroll.CanvasPosition = Vector2.new(0, 0)
-                            SearchBox.Text = "" 
-                            UpdateListPosition()
-                            Populate("") 
-                            if syncConnection then syncConnection:Disconnect() end
-                            syncConnection = RunService.RenderStepped:Connect(UpdateListPosition)
-                        end
-                    end)
-                    
-                    return dropdownFunc
-                end
-
-                -- Component: AddMultiSelect (เวอร์ชันรองรับ Visual Sync และ Fix Load Error)
-                function sectionItems:AddMultiSelect(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -210, 0, 24)
-                    TTitle.Position = UDim2.new(0, 15, 0, 12)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextColor3 = Colors.Text
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-                    
-                    local TDesc = Instance.new("TextLabel")
-                    TDesc.Text = Config.Description or ""
-                    TDesc.Size = UDim2.new(1, -210, 0, 20)
-                    TDesc.Position = UDim2.new(0, 15, 0, 34)
-                    TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
-                    TDesc.TextColor3 = Colors.SubText
-                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
-                    TDesc.BackgroundTransparency = 1
-                    TDesc.ZIndex = 8
-                    TDesc.Parent = Row
-
-                    local Frame = Instance.new("Frame")
-                    Frame.Size = UDim2.new(0, 180, 0, 32)
-                    Frame.Position = UDim2.new(1, -190, 0.5, -16)
-                    Frame.BackgroundColor3 = Colors.White
-                    Frame.BorderSizePixel = 1
-                    Frame.BorderColor3 = Colors.XPInputBorder
-                    Frame.ZIndex = 10
-                    Frame.Parent = Row
-
-                    local Label = Instance.new("TextLabel")
-                    Label.Text = "None"
-                    Label.Size = UDim2.new(1, -37, 1, 0)
-                    Label.Position = UDim2.new(0, 8, 0, 0)
-                    Label.BackgroundTransparency = 1
-                    Label.TextColor3 = Colors.Text
-                    Label.Font = Enum.Font.Arial
-                    Label.TextSize = 13
-                    Label.TextXAlignment = Enum.TextXAlignment.Left
-                    Label.ClipsDescendants = true 
-                    Label.ZIndex = 11
-                    Label.Parent = Frame
-
-                    local ArrowBtn = Instance.new("Frame")
-                    ArrowBtn.Size = UDim2.new(0, 23, 0, 23)
-                    ArrowBtn.Position = UDim2.new(1, -28, 0, 5)
-                    ArrowBtn.BackgroundColor3 = Colors.ButtonClassic
-                    ArrowBtn.BorderSizePixel = 1
-                    ArrowBtn.BorderColor3 = Color3.fromRGB(150, 150, 150)
-                    ArrowBtn.ZIndex = 11
-                    ArrowBtn.Parent = Frame
-                    Instance.new("UICorner", ArrowBtn).CornerRadius = UDim.new(0, 5)
-
-                    local ArrowIcon = Instance.new("ImageLabel")
-                    ArrowIcon.Image = "rbxassetid://74976956154520"
-                    ArrowIcon.Size = UDim2.new(0, 14, 0, 14)
-                    ArrowIcon.Position = UDim2.new(0.23, 0, 0.24, 0)
-                    ArrowIcon.BackgroundTransparency = 1
-                    ArrowIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-                    ArrowIcon.ZIndex = 12
-                    ArrowIcon.Parent = ArrowBtn
-
-                    local MultiClickBtn = Instance.new("TextButton")
-                    MultiClickBtn.Size = UDim2.new(1, 0, 1, 0)
-                    MultiClickBtn.BackgroundTransparency = 1
-                    MultiClickBtn.Text = ""
-                    MultiClickBtn.ZIndex = 15
-                    MultiClickBtn.Parent = Frame
-
-                    local List = Instance.new("Frame")
-                    List.Name = "MultiSelectList"
-                    List.BackgroundColor3 = Colors.White
-                    List.BorderSizePixel = 1
-                    List.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                    List.ZIndex = 1000 
-                    List.Visible = false
-                    List.Parent = MainFrame 
-
-                    local SearchBox = Instance.new("TextBox")
-                    SearchBox.Size = UDim2.new(1, -4, 0, 28)
-                    SearchBox.Position = UDim2.new(0, 2, 0, 2)
-                    SearchBox.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-                    SearchBox.PlaceholderText = "ค้นหา..."
-                    SearchBox.Text = ""
-                    SearchBox.TextSize = 14
-                    SearchBox.ZIndex = 1001
-                    SearchBox.Parent = List
-
-                    local ItemScroll = Instance.new("ScrollingFrame")
-                    ItemScroll.Size = UDim2.new(1, 0, 1, -32)
-                    ItemScroll.Position = UDim2.new(0, 0, 0, 32)
-                    ItemScroll.BackgroundTransparency = 1
-                    ItemScroll.BorderSizePixel = 0
-                    ItemScroll.ScrollBarThickness = 6
-                    ItemScroll.ScrollBarImageColor3 = Colors.ScrollBarThumb
-                    ItemScroll.ZIndex = 1001
-                    ItemScroll.AutomaticCanvasSize = Enum.AutomaticSize.None
-                    ItemScroll.Parent = List
-                    local ListLayout = Instance.new("UIListLayout", ItemScroll)
-
-                    local syncConnection
-                    local selectedItems = Config.Default or {} 
-
-                    local function UpdateLabel()
-                        if type(selectedItems) == "table" then
-                            Label.Text = #selectedItems == 0 and "None" or table.concat(selectedItems, ", ")
-                        else
-                            Label.Text = tostring(selectedItems)
-                        end
-                    end
-                    UpdateLabel()
-
-                    local function UpdateListPosition()
-                        if List.Visible then
-                            local absPos = Frame.AbsolutePosition
-                            local mainAbsPos = MainFrame.AbsolutePosition
-                            local contentHeight = ListLayout.AbsoluteContentSize.Y
-                            ItemScroll.CanvasSize = UDim2.new(0, 0, 0, contentHeight + 5)
-                            local dynamicHeight = math.clamp(contentHeight + 34, 60, 200)
-                            List.Size = UDim2.new(0, Frame.AbsoluteSize.X, 0, dynamicHeight)
-                            List.Position = UDim2.new(0, absPos.X - mainAbsPos.X, 0, absPos.Y - mainAbsPos.Y + Frame.AbsoluteSize.Y)
-                        end
-                    end
-
-                    local function Populate(filter)
-                        for _, child in pairs(ItemScroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-                        for _, item in pairs(Config.Options or {}) do
-                            if filter == "" or string.find(string.lower(tostring(item)), string.lower(tostring(filter))) then
-                                local itemBtn = Instance.new("TextButton")
-                                itemBtn.Size = UDim2.new(1, 0, 0, 28)
-                                itemBtn.BorderSizePixel = 0
-                                itemBtn.Text = "  " .. tostring(item)
-                                itemBtn.TextSize = 14
-                                itemBtn.TextXAlignment = Enum.TextXAlignment.Left
-                                itemBtn.ZIndex = 1002
-                                itemBtn.Parent = ItemScroll
-                                
-                                local function RefreshColor()
-                                    if type(selectedItems) == "table" and table.find(selectedItems, item) then
-                                        itemBtn.BackgroundColor3 = Colors.DropdownSelectBlue
-                                        itemBtn.TextColor3 = Colors.White
-                                    else
-                                        itemBtn.BackgroundColor3 = Colors.White
-                                        itemBtn.TextColor3 = Colors.Text
-                                    end
-                                end
-                                RefreshColor()
-                                
-                                itemBtn.MouseButton1Click:Connect(function()
-                                    if type(selectedItems) ~= "table" then selectedItems = {} end
-                                    local foundIndex = table.find(selectedItems, item)
-                                    if foundIndex then
-                                        table.remove(selectedItems, foundIndex)
-                                    else
-                                        table.insert(selectedItems, item)
-                                    end
-                                    RefreshColor()
-                                    UpdateLabel()
-                                    UpdateState(Config.ID, selectedItems)
-                                    Config.Callback(selectedItems)
-                                end)
-                            end
-                        end
-                    end
-
-                    SearchBox:GetPropertyChangedSignal("Text"):Connect(function() Populate(SearchBox.Text) end)
-
-                    -- ### ระบบ Visual Sync & Objects Storage ###
-                    if Config.ID and XPHub.Objects then
-                        XPHub.Objects[Config.ID] = {
-                            Type = "MultiSelect",
-                            Update = function(val)
-                                -- ถ้าค่าที่โหลดมาไม่ใช่ Table (เช่นโหลด String มาตัวเดียว) ให้แปลงเป็น Table
-                                if type(val) == "table" then
-                                    selectedItems = val
-                                else
-                                    selectedItems = {val}
-                                end
-                                UpdateLabel()
-                            end,
-                            -- ป้องกัน Error ถ้าไม่ได้ใส่ Callback
-                            Callback = Config.Callback or function() end 
-                        }
-                    end
-
-                    MultiClickBtn.MouseButton1Click:Connect(function()
-                        if List.Visible then
-                            List.Visible = false
-                            activeDropdownList = nil
-                            if syncConnection then syncConnection:Disconnect() end
-                        else
-                            CloseAllDropdowns() 
-                            List.Visible = true
-                            activeDropdownList = List
-                            ItemScroll.CanvasPosition = Vector2.new(0, 0)
-                            SearchBox.Text = "" 
-                            UpdateListPosition()
-                            Populate("") 
-                            if syncConnection then syncConnection:Disconnect() end
-                            syncConnection = RunService.RenderStepped:Connect(UpdateListPosition)
-                        end
-                    end)
-                end
-
-                -- Component: AddInput (เวอร์ชันรองรับ Visual Sync และ Save/Load สมบูรณ์)
-                function sectionItems:AddInput(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -160, 0, 24)
-                    TTitle.Position = UDim2.new(0, 15, 0, 12)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextColor3 = Colors.Text
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-                    
-                    local TDesc = Instance.new("TextLabel")
-                    TDesc.Text = Config.Description or ""
-                    TDesc.Size = UDim2.new(1, -160, 0, 20)
-                    TDesc.Position = UDim2.new(0, 15, 0, 34)
-                    TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
-                    TDesc.TextColor3 = Colors.SubText
-                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
-                    TDesc.BackgroundTransparency = 1
-                    TDesc.ZIndex = 8
-                    TDesc.Parent = Row
-
-                    local InputFrame = Instance.new("Frame")
-                    InputFrame.Size = UDim2.new(0, 140, 0, 32)
-                    InputFrame.Position = UDim2.new(1, -150, 0.5, -16)
-                    InputFrame.BackgroundColor3 = Colors.InputBackground
-                    InputFrame.BorderSizePixel = 1
-                    InputFrame.BorderColor3 = Colors.XPInputBorder
-                    InputFrame.ClipsDescendants = true
-                    InputFrame.ZIndex = 9
-                    InputFrame.Parent = Row
-                    Instance.new("UICorner", InputFrame).CornerRadius = UDim.new(0, 4)
-
-                    local TextBox = Instance.new("TextBox")
-                    TextBox.Size = UDim2.new(1, -12, 1, 0)
-                    TextBox.Position = UDim2.new(0, 6, 0, 0)
-                    TextBox.BackgroundTransparency = 1
-                    TextBox.Text = Config.Default or ""
-                    TextBox.PlaceholderText = Config.Placeholder or "พิมพ์ที่นี่..."
-                    TextBox.TextColor3 = Colors.Text
-                    TextBox.TextSize = 14
-                    TextBox.Font = Enum.Font.Arial
-                    TextBox.TextXAlignment = Enum.TextXAlignment.Left
-                    TextBox.ClearTextOnFocus = false
-                    TextBox.ZIndex = 10
-                    TextBox.Parent = InputFrame
-
-                    -- ### ระบบบันทึกค่าและ Sync UI ###
-                    if Config.ID and XPHub.Objects then
-                        UpdateState(Config.ID, Config.Default or "")
-                        
-                        -- เก็บ Object พร้อมฟังก์ชัน Update สำหรับ Load Config
-                        XPHub.Objects[Config.ID] = {
-                            Type = "Input",
-                            Instance = TextBox,
-                            Update = function(val)
-                                TextBox.Text = tostring(val)
-                            end
-                        }
-                    end
-
-                    TextBox.FocusLost:Connect(function(enterPressed)
-                        local currentText = TextBox.Text
-                        if Config.ID then
-                            UpdateState(Config.ID, currentText)
-                        end
-                        Config.Callback(currentText, enterPressed)
-                    end)
-                    
-                    return Row
-                end
-
-                -- Component: AddButton (ปุ่มกดสไตล์ Windows XP Classic)
-                function sectionItems:AddButton(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -160, 0, 24)
-                    TTitle.Position = UDim2.new(0, 15, 0, 12)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextColor3 = Colors.Text
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-                    
-                    local TDesc = Instance.new("TextLabel")
-                    TDesc.Text = Config.Description or ""
-                    TDesc.Size = UDim2.new(1, -160, 0, 20)
-                    TDesc.Position = UDim2.new(0, 15, 0, 34)
-                    TDesc.Font = Enum.Font.Arial
-                    TDesc.TextSize = 13
-                    TDesc.TextColor3 = Colors.SubText
-                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
-                    TDesc.BackgroundTransparency = 1
-                    TDesc.ZIndex = 8
-                    TDesc.Parent = Row
-
-                    -- ตัวปุ่มจริง
-                    local Button = Instance.new("TextButton")
-                    Button.Name = "XPButton"
-                    Button.Size = UDim2.new(0, 120, 0, 32)
-                    Button.Position = UDim2.new(1, -135, 0.5, -16)
-                    Button.BackgroundColor3 = Colors.ButtonClassic
-                    Button.Text = Config.ButtonText or "Click"
-                    Button.Font = Enum.Font.ArialBold
-                    Button.TextSize = 14
-                    Button.TextColor3 = Colors.Text
-                    Button.ZIndex = 9
-                    Button.Parent = Row
-                    
-                    local BtnCorner = Instance.new("UICorner", Button)
-                    BtnCorner.CornerRadius = UDim.new(0, 4)
-
-                    -- เส้นขอบปุ่มสไตล์ XP
-                    local BtnStroke = Instance.new("UIStroke", Button)
-                    BtnStroke.Color = Color3.fromRGB(100, 100, 100)
-                    BtnStroke.Thickness = 1
-                    BtnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-                    -- Gradient เพิ่มความนูนให้ปุ่ม
-                    local BtnGradient = Instance.new("UIGradient", Button)
-                    BtnGradient.Rotation = 90
-                    BtnGradient.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 200, 200))
-                    })
-
-                    -- Click Animation & Logic
-                    Button.MouseButton1Down:Connect(function()
-                        TweenService:Create(Button, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(180, 180, 180)}):Play()
-                    end)
-
-                    Button.MouseButton1Up:Connect(function()
-                        TweenService:Create(Button, TweenInfo.new(0.1), {BackgroundColor3 = Colors.ButtonClassic}):Play()
-                    end)
-
-                    Button.MouseButton1Click:Connect(function()
-                        Config.Callback()
-                    end)
-                    
-                    return Button
-                end
-
-                -- Component: AddLabel (เวอร์ชัน Premium Status Box)
-                function sectionItems:AddLabel(Title)
-                    local Row = Instance.new("Frame")
-                    Row.Size = UDim2.new(0.99, 0, 0, 35) -- เริ่มต้นที่ 35
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.BorderSizePixel = 0
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    
-                    local RowCorner = Instance.new("UICorner", Row)
-                    RowCorner.CornerRadius = UDim.new(0, 4)
-
-                    -- แถบสีด้านซ้าย (Accent Bar)
-                    local Accent = Instance.new("Frame")
-                    Accent.Size = UDim2.new(0, 4, 1, 0)
-                    Accent.BackgroundColor3 = Colors.TitleBarDark
-                    Accent.BorderSizePixel = 0
-                    Accent.ZIndex = 8
-                    Accent.Parent = Row
-                    Instance.new("UICorner", Accent).CornerRadius = UDim.new(0, 4)
-
-                    -- พื้นหลังไล่เฉดสีเบาๆ (XP Gradient)
-                    local Grad = Instance.new("UIGradient")
-                    Grad.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(240, 245, 255)),
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
-                    })
-                    Grad.Rotation = 0
-                    Grad.Parent = Row
-
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = "ℹ️ " .. Title -- ใส่ Icon เล็กๆ ให้ดูเป็น Status
-                    TTitle.Size = UDim2.new(1, -25, 1, 0)
-                    TTitle.Position = UDim2.new(0, 15, 0, 0)
-                    TTitle.Font = Enum.Font.ArialBold -- ใช้ตัวหนาให้ดูเป็นทางการ
-                    TTitle.TextSize = 13
-                    TTitle.TextColor3 = Color3.fromRGB(50, 50, 80) -- สีน้ำเงินเทาเข้ม
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.TextWrapped = true -- ถ้ายาวเกินให้ตัดบรรทัด
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-
-                    -- ระบบปรับขนาดอัตโนมัติ (Dynamic Height)
-                    TTitle:GetPropertyChangedSignal("Text"):Connect(function()
-                        local textHeight = TTitle.TextBounds.Y
-                        Row.Size = UDim2.new(0.99, 0, 0, math.max(35, textHeight + 15))
-                    end)
-
-                    -- ฟังก์ชันควบคุมภายนอก
-                    local labelFunc = {}
-                    
-                    -- อัปเดตข้อความ
-                    function labelFunc:Set(newText)
-                        TTitle.Text = "ℹ️ " .. newText
-                    end
-
-                    -- เปลี่ยนสี Accent และ Text (เช่น เปลี่ยนเป็นสีเขียว/แดง)
-                    function labelFunc:SetColor(color)
-                        Accent.BackgroundColor3 = color
-                        TTitle.TextColor3 = color
-                    end
-
-                    return labelFunc
-                end
-
-                -- Component: AddKeybind (Perfect Version: Enum Support & JSON Safe)
-                function sectionItems:AddKeybind(Config)
-                    local Row = Instance.new("Frame")
-                    Row.Size = SizeItem.BoxItem
-                    Row.BackgroundColor3 = Colors.White
-                    Row.BackgroundTransparency = 0.4
-                    Row.ZIndex = 7
-                    Row.Parent = SectionFrame
-                    Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
-                    
-                    local TTitle = Instance.new("TextLabel")
-                    TTitle.Text = Config.Title
-                    TTitle.Size = UDim2.new(1, -120, 1, 0)
-                    TTitle.Position = UDim2.new(0, 15, 0, 0)
-                    TTitle.Font = Enum.Font.ArialBold
-                    TTitle.TextSize = 16
-                    TTitle.TextColor3 = Colors.Text
-                    TTitle.TextXAlignment = Enum.TextXAlignment.Left
-                    TTitle.BackgroundTransparency = 1
-                    TTitle.ZIndex = 8
-                    TTitle.Parent = Row
-
-                    local BindButton = Instance.new("TextButton")
-                    BindButton.Size = UDim2.new(0, 80, 0, 32)
-                    BindButton.Position = UDim2.new(1, -95, 0.5, -16)
-                    BindButton.BackgroundColor3 = Colors.ButtonClassic
-                    
-                    -- ตัวแปรเก็บค่า Key (เป็น Enum จริง)
-                    local currentKey = Config.Default
-                    
-                    -- แสดงผลแค่ชื่อปุ่ม เช่น [ G ] หรือ [ ... ] ถ้าไม่มีค่า
-                    BindButton.Text = currentKey and "[" .. currentKey.Name .. "]" or "[ ... ]"
-                    BindButton.Font = Enum.Font.ArialBold
-                    BindButton.TextSize = 14
-                    BindButton.TextColor3 = Colors.Text
-                    BindButton.ZIndex = 9
-                    BindButton.Parent = Row
-                    Instance.new("UICorner", BindButton).CornerRadius = UDim.new(0, 4)
-                    
-                    local bStroke = Instance.new("UIStroke", BindButton)
-                    bStroke.Color = Color3.fromRGB(120, 120, 120)
-                    bStroke.Thickness = 1
-
-                    -- ใน function sectionItems:AddKeybind(Config)
-                    local currentKey = Config.Default
-                    local keyConnection
-
-                    local function StartListening()
-                        if keyConnection then keyConnection:Disconnect() end
-                        if not currentKey then return end
-                        
-                        keyConnection = UserInputService.InputBegan:Connect(function(input, gp)
-                            if gp then return end
-                            if input.KeyCode == currentKey then
-                                Config.Callback(currentKey) -- ส่ง Enum จริงกลับไป
-                            end
-                        end)
-                        
-                        -- เก็บ Connection ไว้เผื่อสั่ง Stop
-                        if XPHub.Objects[Config.ID] then
-                            XPHub.Objects[Config.ID].Connection = keyConnection
-                        end
-                    end
-
-                    -- เพิ่มส่วน Reset ใน Objects
-                    if Config.ID and XPHub.Objects then
-                        XPHub.Objects[Config.ID] = {
-                            Type = "Keybind",
-                            -- ฟังก์ชันสั่งหยุดทำงาน
-                            Stop = function()
-                                if keyConnection then 
-                                    keyConnection:Disconnect() 
-                                    keyConnection = nil
-                                end
-                            end,
-                            Update = function(valName)
-                                if not valName or valName == "" then return end
-                                if typeof(valName) == "string" and Enum.KeyCode[valName] then
-                                    currentKey = Enum.KeyCode[valName]
-                                    BindButton.Text = "[" .. valName .. "]"
-                                    StartListening()
-                                end
-                            end
-                        }
-                    end
-
-                    -- เริ่มทำงานทันทีถ้ามีค่า Default มาให้
-                    if currentKey then StartListening() end
-
-                    -- ระบบดักจับการตั้งค่าปุ่มใหม่
-                    BindButton.MouseButton1Click:Connect(function()
-                        if IsBinding then return end -- IsBinding ต้องประกาศเป็น Local/Global ไว้บนสุดของสคริปต์
-                        IsBinding = true
-                        BindButton.Text = "[ ... ]"
-                        BindButton.TextColor3 = Colors.TitleBarDark
-                        
-                        local tempConnection
-                        tempConnection = UserInputService.InputBegan:Connect(function(input)
-                            if input.UserInputType == Enum.UserInputType.Keyboard then
-                                local newKey = input.KeyCode
-                                
-                                if newKey ~= Enum.KeyCode.Escape then
-                                    currentKey = newKey -- เก็บค่า Enum จริงไว้ใช้งาน
-                                    BindButton.Text = "[" .. newKey.Name .. "]"
-                                    BindButton.TextColor3 = Colors.Text
-                                    
-                                    -- ### จุดสำคัญ: ส่งแค่ .Name (String) ไปเซฟเพื่อไม่ให้ JSON พัง ###
-                                    UpdateState(Config.ID, newKey.Name)
-                                    
-                                    StartListening() -- อัปเดตการตรวจจับปุ่มใหม่
-                                else
-                                    -- ถ้ากด ESC ให้ยกเลิกและกลับไปใช้ค่าเดิม
-                                    BindButton.Text = currentKey and "[" .. currentKey.Name .. "]" or "[ ... ]"
-                                    BindButton.TextColor3 = Colors.Text
-                                end
-                                
-                                IsBinding = false
-                                tempConnection:Disconnect()
-                            end
-                        end)
-                    end)
-
-                    -- สำหรับระบบ Load Config (Visual Sync)
-                    if Config.ID and XPHub.Objects then
-                        XPHub.Objects[Config.ID] = {
-                            Update = function(valName)
-                                if not valName or valName == "" then return end -- ป้องกันค่า nil/ว่าง
-                                if typeof(valName) == "string" and Enum.KeyCode[valName] then
-                                    currentKey = Enum.KeyCode[valName]
-                                    BindButton.Text = "[" .. valName .. "]"
-                                    StartListening()
-                                end
-                            end
-                        }
-                    end
-                end
-
-
-                return sectionItems
-            end
-            return tab
+            TweenService:Create(TabBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = Colors.CardHover,
+                BackgroundTransparency = 0
+            }):Play()
+            TweenService:Create(ActiveBar, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
+            TabLabel.Font = Enum.Font.GothamBold
+            TweenService:Create(TabLabel, TweenInfo.new(0.2), {TextColor3 = Colors.Text}):Play()
+            TweenService:Create(TabIcon, TweenInfo.new(0.2), {ImageColor3 = Colors.AccentLight}):Play()
         end
-        ScreenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-            if StartBtn then
-                AdjustStartBtnByRatio(StartBtn)
+
+        TabBtn.MouseEnter:Connect(function()
+            if not Page.Visible then
+                TweenService:Create(TabBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+                TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = Colors.Text}):Play()
             end
         end)
-        return window
+
+        TabBtn.MouseLeave:Connect(function()
+            if not Page.Visible then
+                TweenService:Create(TabBtn, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = Colors.SubText}):Play()
+            end
+        end)
+
+        TabBtn.MouseButton1Click:Connect(function()
+            CloseAllDropdowns()
+            for _, p in pairs(Container:GetChildren()) do
+                if p:IsA("ScrollingFrame") then p.Visible = false end
+            end
+            UpdateTabVisuals()
+            Page.Visible = true
+        end)
+
+        if window.CountTab == 0 then
+            Page.Visible = true
+            UpdateTabVisuals()
+        end
+        window.CountTab = window.CountTab + 1
+
+        -- ==========================================
+        -- 📦 ฟังก์ชันสร้าง Section
+        -- ==========================================
+        function tab:AddSection(Title, Description, IconID)
+            local sectionItems = {}
+            local SectionFrame = Instance.new("Frame")
+            SectionFrame.Name = "SectionFrame"
+            SectionFrame.Size = UDim2.new(1, 0, 0, 50)
+            SectionFrame.BackgroundTransparency = 1
+            SectionFrame.ZIndex = 5
+            SectionFrame.ClipsDescendants = false
+            tab.CountSection = tab.CountSection + 1
+            SectionFrame.LayoutOrder = tab.CountSection
+            SectionFrame.Parent = Page
+
+            local SectionLayout = Instance.new("UIListLayout")
+            SectionLayout.Padding = UDim.new(0, 7)
+            SectionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+            SectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            SectionLayout.Parent = SectionFrame
+
+            -- ส่วนหัว Section สไตล์ Modern Card Header
+            local HeaderContainer = Instance.new("Frame")
+            HeaderContainer.Size = SizeItem.TitleItem
+            HeaderContainer.BackgroundColor3 = Colors.SectionHeaderBg
+            HeaderContainer.BorderSizePixel = 0
+            HeaderContainer.ZIndex = 6
+            HeaderContainer.Parent = SectionFrame
+
+            Instance.new("UICorner", HeaderContainer).CornerRadius = UDim.new(0, 8)
+            AddStroke(HeaderContainer, Colors.BorderHighlight, 1, 0.35)
+
+            local HeaderGrad = Instance.new("UIGradient", HeaderContainer)
+            HeaderGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(32, 42, 66)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 26, 38))
+            })
+
+            local LeftAccent = Instance.new("Frame")
+            LeftAccent.Size = UDim2.new(0, 3, 0, 22)
+            LeftAccent.Position = UDim2.new(0, 0, 0.5, 0)
+            LeftAccent.AnchorPoint = Vector2.new(0, 0.5)
+            LeftAccent.BackgroundColor3 = Colors.Accent
+            LeftAccent.BorderSizePixel = 0
+            LeftAccent.ZIndex = 7
+            LeftAccent.Parent = HeaderContainer
+            Instance.new("UICorner", LeftAccent).CornerRadius = UDim.new(1, 0)
+
+            if IconID then
+                local SecIcon = Instance.new("ImageLabel")
+                SecIcon.Size = UDim2.new(0, 20, 0, 20)
+                SecIcon.Position = UDim2.new(0, 14, 0.5, -10)
+                SecIcon.Image = IconID
+                SecIcon.BackgroundTransparency = 1
+                SecIcon.ImageColor3 = Colors.AccentLight
+                SecIcon.ZIndex = 7
+                SecIcon.Parent = HeaderContainer
+            end
+
+            local hasDesc = Description and Description ~= ""
+            local textOffsetX = IconID and 42 or 14
+
+            local HeaderTitle = Instance.new("TextLabel")
+            HeaderTitle.Size = UDim2.new(1, -50, 0, 20)
+            HeaderTitle.Position = hasDesc and UDim2.new(0, textOffsetX, 0, 6) or UDim2.new(0, textOffsetX, 0.5, -10)
+            HeaderTitle.Text = Title
+            HeaderTitle.Font = Enum.Font.GothamBold
+            HeaderTitle.TextSize = 14
+            HeaderTitle.TextColor3 = Colors.AccentLight
+            HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+            HeaderTitle.BackgroundTransparency = 1
+            HeaderTitle.ZIndex = 7
+            HeaderTitle.Parent = HeaderContainer
+
+            if hasDesc then
+                local Desc = Instance.new("TextLabel")
+                Desc.Size = UDim2.new(1, -50, 0, 15)
+                Desc.Position = UDim2.new(0, textOffsetX, 0, 25)
+                Desc.Text = Description
+                Desc.Font = Enum.Font.Gotham
+                Desc.TextSize = 11
+                Desc.TextColor3 = Colors.SubText
+                Desc.TextXAlignment = Enum.TextXAlignment.Left
+                Desc.BackgroundTransparency = 1
+                Desc.ZIndex = 7
+                Desc.Parent = HeaderContainer
+            end
+
+            SectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                SectionFrame.Size = UDim2.new(1, 0, 0, SectionLayout.AbsoluteContentSize.Y + 4)
+            end)
+
+            -- Helper สร้าง Title + Description ภายในแถว
+            local function CreateRowLabels(row, titleText, descText, rightReservedWidth)
+                local hasRowDesc = descText and descText ~= ""
+                local TTitle = Instance.new("TextLabel")
+                TTitle.Text = titleText or ""
+                TTitle.Size = UDim2.new(1, -rightReservedWidth, 0, 20)
+                TTitle.Position = hasRowDesc and UDim2.new(0, 14, 0, 10) or UDim2.new(0, 14, 0.5, -10)
+                TTitle.Font = Enum.Font.GothamBold
+                TTitle.TextSize = 13
+                TTitle.TextColor3 = Colors.Text
+                TTitle.TextXAlignment = Enum.TextXAlignment.Left
+                TTitle.BackgroundTransparency = 1
+                TTitle.ZIndex = 8
+                TTitle.Parent = row
+
+                if hasRowDesc then
+                    local TDesc = Instance.new("TextLabel")
+                    TDesc.Text = descText
+                    TDesc.Size = UDim2.new(1, -rightReservedWidth, 0, 16)
+                    TDesc.Position = UDim2.new(0, 14, 0, 31)
+                    TDesc.Font = Enum.Font.Gotham
+                    TDesc.TextSize = 11
+                    TDesc.TextColor3 = Colors.SubText
+                    TDesc.TextXAlignment = Enum.TextXAlignment.Left
+                    TDesc.BackgroundTransparency = 1
+                    TDesc.ZIndex = 8
+                    TDesc.Parent = row
+                end
+            end
+
+            -- ==========================================
+            -- 1. Toggle Switch
+            -- ==========================================
+            function sectionItems:AddToggleSwitch(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 85)
+
+                local SwitchBg = Instance.new("TextButton")
+                SwitchBg.Size = UDim2.new(0, 46, 0, 24)
+                SwitchBg.Position = UDim2.new(1, -60, 0.5, -12)
+                SwitchBg.BackgroundColor3 = Config.Default and Colors.SwitchOn or Colors.SwitchOff
+                SwitchBg.AutoButtonColor = false
+                SwitchBg.Text = ""
+                SwitchBg.ZIndex = 9
+                SwitchBg.Parent = Row
+                Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(1, 0)
+                local switchStroke = AddStroke(SwitchBg, Config.Default and Colors.AccentLight or Colors.Border, 1, 0.3)
+
+                local Knob = Instance.new("Frame")
+                Knob.Size = UDim2.new(0, 18, 0, 18)
+                Knob.Position = Config.Default and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+                Knob.BackgroundColor3 = Colors.White
+                Knob.ZIndex = 10
+                Knob.Parent = SwitchBg
+                Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
+
+                local state = Config.Default or false
+                UpdateState(Config.ID, state)
+
+                local function VisualUpdate(val)
+                    local targetPos = val and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+                    local targetColor = val and Colors.SwitchOn or Colors.SwitchOff
+                    local strokeColor = val and Colors.AccentLight or Colors.Border
+                    TweenService:Create(Knob, TweenInfo.new(0.22, Enum.EasingStyle.Quint), {Position = targetPos}):Play()
+                    TweenService:Create(SwitchBg, TweenInfo.new(0.22, Enum.EasingStyle.Quint), {BackgroundColor3 = targetColor}):Play()
+                    TweenService:Create(switchStroke, TweenInfo.new(0.22), {Color = strokeColor}):Play()
+                end
+
+                if Config.ID and XPHub.Objects then
+                    XPHub.Objects[Config.ID] = {
+                        Type = "Toggle",
+                        Instance = SwitchBg,
+                        Knob = Knob,
+                        Callback = Config.Callback,
+                        Update = function(val)
+                            state = val
+                            VisualUpdate(val)
+                        end
+                    }
+                end
+
+                SwitchBg.MouseButton1Click:Connect(function()
+                    state = not state
+                    VisualUpdate(state)
+                    UpdateState(Config.ID, state)
+                    if Config.Callback then Config.Callback(state) end
+                end)
+            end
+
+            -- ==========================================
+            -- 2. Slider
+            -- ==========================================
+            function sectionItems:AddSlider(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 180)
+
+                local SliderContainer = Instance.new("Frame")
+                SliderContainer.Size = UDim2.new(0, 155, 0, 42)
+                SliderContainer.Position = UDim2.new(1, -168, 0.5, -21)
+                SliderContainer.BackgroundTransparency = 1
+                SliderContainer.ZIndex = 9
+                SliderContainer.Parent = Row
+
+                local ValueBadge = Instance.new("Frame")
+                ValueBadge.Size = UDim2.new(0, 0, 0, 18)
+                ValueBadge.AutomaticSize = Enum.AutomaticSize.X
+                ValueBadge.Position = UDim2.new(1, 0, 0, 2)
+                ValueBadge.AnchorPoint = Vector2.new(1, 0)
+                ValueBadge.BackgroundColor3 = Colors.InputBg
+                ValueBadge.ZIndex = 10
+                ValueBadge.Parent = SliderContainer
+                Instance.new("UICorner", ValueBadge).CornerRadius = UDim.new(0, 5)
+                AddStroke(ValueBadge, Colors.Border, 1, 0.3)
+
+                local BadgePad = Instance.new("UIPadding", ValueBadge)
+                BadgePad.PaddingLeft = UDim.new(0, 6)
+                BadgePad.PaddingRight = UDim.new(0, 6)
+
+                local ValueLabel = Instance.new("TextLabel")
+                ValueLabel.Size = UDim2.new(0, 0, 1, 0)
+                ValueLabel.AutomaticSize = Enum.AutomaticSize.X
+                ValueLabel.BackgroundTransparency = 1
+                ValueLabel.Text = tostring(Config.Default or Config.Min) .. " / " .. tostring(Config.Max)
+                ValueLabel.TextColor3 = Colors.AccentLight
+                ValueLabel.Font = Enum.Font.RobotoMono
+                ValueLabel.TextSize = 11
+                ValueLabel.ZIndex = 11
+                ValueLabel.Parent = ValueBadge
+
+                local SliderBack = Instance.new("Frame")
+                SliderBack.Size = UDim2.new(1, 0, 0, 6)
+                SliderBack.Position = UDim2.new(0, 0, 0, 29)
+                SliderBack.BackgroundColor3 = Colors.InputBg
+                SliderBack.BorderSizePixel = 0
+                SliderBack.ZIndex = 10
+                SliderBack.Parent = SliderContainer
+                Instance.new("UICorner", SliderBack).CornerRadius = UDim.new(1, 0)
+                AddStroke(SliderBack, Colors.Border, 1, 0.4)
+
+                local initialScale = math.clamp(((Config.Default or Config.Min) - Config.Min) / (Config.Max - Config.Min), 0, 1)
+
+                local SliderFill = Instance.new("Frame")
+                SliderFill.Size = UDim2.new(initialScale, 0, 1, 0)
+                SliderFill.BackgroundColor3 = Colors.Accent
+                SliderFill.BorderSizePixel = 0
+                SliderFill.ZIndex = 11
+                SliderFill.Parent = SliderBack
+                Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(1, 0)
+
+                local Handle = Instance.new("Frame")
+                Handle.Size = UDim2.new(0, 14, 0, 14)
+                Handle.AnchorPoint = Vector2.new(0.5, 0.5)
+                Handle.Position = UDim2.new(initialScale, 0, 0.5, 0)
+                Handle.BackgroundColor3 = Colors.White
+                Handle.ZIndex = 12
+                Handle.Active = true
+                Handle.Parent = SliderBack
+                Instance.new("UICorner", Handle).CornerRadius = UDim.new(1, 0)
+                AddStroke(Handle, Colors.Accent, 2, 0)
+
+                local dragging = false
+                UpdateState(Config.ID, Config.Default or Config.Min)
+
+                local function VisualUpdate(val)
+                    local relativeX = math.clamp((val - Config.Min) / (Config.Max - Config.Min), 0, 1)
+                    TweenService:Create(SliderFill, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {Size = UDim2.new(relativeX, 0, 1, 0)}):Play()
+                    TweenService:Create(Handle, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {Position = UDim2.new(relativeX, 0, 0.5, 0)}):Play()
+                    ValueLabel.Text = tostring(val) .. " / " .. tostring(Config.Max)
+                end
+
+                if Config.ID and XPHub.Objects then
+                    XPHub.Objects[Config.ID] = {
+                        Type = "Slider",
+                        Instance = SliderFill,
+                        Handle = Handle,
+                        Label = ValueLabel,
+                        Config = Config,
+                        Callback = Config.Callback,
+                        Update = VisualUpdate
+                    }
+                end
+
+                local function UpdateSlider(input)
+                    local mouseLocation = input.Position
+                    local relativeX = math.clamp((mouseLocation.X - SliderBack.AbsolutePosition.X) / SliderBack.AbsoluteSize.X, 0, 1)
+                    local value = math.floor(Config.Min + (Config.Max - Config.Min) * relativeX)
+
+                    VisualUpdate(value)
+                    UpdateState(Config.ID, value)
+                    if Config.Callback then Config.Callback(value) end
+                end
+
+                SliderBack.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        dragging = true
+                        TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 17, 0, 17)}):Play()
+                        UpdateSlider(input)
+                    end
+                end)
+
+                Handle.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        dragging = true
+                        TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 17, 0, 17)}):Play()
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        dragging = false
+                        TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 14, 0, 14)}):Play()
+                    end
+                end)
+
+                UserInputService.InputChanged:Connect(function(input)
+                    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                        UpdateSlider(input)
+                    end
+                end)
+            end
+
+            -- ==========================================
+            -- 3. Dropdown
+            -- ==========================================
+            function sectionItems:AddDropdown(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 205)
+
+                local Frame = Instance.new("Frame")
+                Frame.Size = UDim2.new(0, 180, 0, 34)
+                Frame.Position = UDim2.new(1, -192, 0.5, -17)
+                Frame.BackgroundColor3 = Colors.InputBg
+                Frame.BorderSizePixel = 0
+                Frame.ZIndex = 10
+                Frame.Parent = Row
+                Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 7)
+                local boxStroke = AddStroke(Frame, Colors.Border, 1, 0)
+
+                local Label = Instance.new("TextLabel")
+                Label.Text = Config.Default or "เลือก..."
+                Label.Size = UDim2.new(1, -36, 1, 0)
+                Label.Position = UDim2.new(0, 10, 0, 0)
+                Label.BackgroundTransparency = 1
+                Label.TextColor3 = Colors.Text
+                Label.Font = Enum.Font.GothamMedium
+                Label.TextSize = 12
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.TextTruncate = Enum.TextTruncate.AtEnd
+                Label.ClipsDescendants = true
+                Label.ZIndex = 11
+                Label.Parent = Frame
+
+                local ArrowIcon = Instance.new("ImageLabel")
+                ArrowIcon.Image = "rbxassetid://74976956154520"
+                ArrowIcon.Size = UDim2.new(0, 12, 0, 12)
+                ArrowIcon.Position = UDim2.new(1, -22, 0.5, -6)
+                ArrowIcon.BackgroundTransparency = 1
+                ArrowIcon.ImageColor3 = Colors.SubText
+                ArrowIcon.ZIndex = 12
+                ArrowIcon.Parent = Frame
+
+                local DropdownClickBtn = Instance.new("TextButton")
+                DropdownClickBtn.Size = UDim2.new(1, 0, 1, 0)
+                DropdownClickBtn.BackgroundTransparency = 1
+                DropdownClickBtn.Text = ""
+                DropdownClickBtn.ZIndex = 15
+                DropdownClickBtn.Parent = Frame
+
+                local List = Instance.new("Frame")
+                List.Name = "DropdownList"
+                List.BackgroundColor3 = Colors.DropdownBg
+                List.BorderSizePixel = 0
+                List.ZIndex = 1000
+                List.Visible = false
+                List.ClipsDescendants = true
+                List.Parent = MainFrame
+                Instance.new("UICorner", List).CornerRadius = UDim.new(0, 8)
+                AddStroke(List, Colors.BorderHighlight, 1.2, 0)
+
+                local SearchContainer = Instance.new("Frame")
+                SearchContainer.Size = UDim2.new(1, -12, 0, 28)
+                SearchContainer.Position = UDim2.new(0, 6, 0, 6)
+                SearchContainer.BackgroundColor3 = Colors.InputBg
+                SearchContainer.ZIndex = 1001
+                SearchContainer.Parent = List
+                Instance.new("UICorner", SearchContainer).CornerRadius = UDim.new(0, 6)
+                AddStroke(SearchContainer, Colors.Border, 1, 0.3)
+
+                local SearchBox = Instance.new("TextBox")
+                SearchBox.Size = UDim2.new(1, -16, 1, 0)
+                SearchBox.Position = UDim2.new(0, 8, 0, 0)
+                SearchBox.BackgroundTransparency = 1
+                SearchBox.PlaceholderText = "🔍 ค้นหา..."
+                SearchBox.PlaceholderColor3 = Colors.MutedText
+                SearchBox.TextColor3 = Colors.Text
+                SearchBox.Font = Enum.Font.Gotham
+                SearchBox.Text = ""
+                SearchBox.TextSize = 12
+                SearchBox.TextXAlignment = Enum.TextXAlignment.Left
+                SearchBox.ZIndex = 1002
+                SearchBox.Parent = SearchContainer
+
+                local ItemScroll = Instance.new("ScrollingFrame")
+                ItemScroll.Size = UDim2.new(1, -8, 1, -42)
+                ItemScroll.Position = UDim2.new(0, 4, 0, 38)
+                ItemScroll.BackgroundTransparency = 1
+                ItemScroll.BorderSizePixel = 0
+                ItemScroll.ScrollBarThickness = 3
+                ItemScroll.ScrollBarImageColor3 = Colors.Accent
+                ItemScroll.ZIndex = 1001
+                ItemScroll.Parent = List
+
+                local ItemListLayout = Instance.new("UIListLayout", ItemScroll)
+                ItemListLayout.Padding = UDim.new(0, 3)
+
+                local syncConnection
+                local currentlySelected = Config.Default or nil
+                UpdateState(Config.ID, currentlySelected)
+
+                local function UpdateListPosition()
+                    if List.Visible then
+                        local absPos = Frame.AbsolutePosition
+                        local mainAbsPos = MainFrame.AbsolutePosition
+                        local contentHeight = ItemListLayout.AbsoluteContentSize.Y
+                        ItemScroll.CanvasSize = UDim2.new(0, 0, 0, contentHeight + 6)
+                        local dynamicHeight = math.clamp(contentHeight + 46, 75, 210)
+                        List.Size = UDim2.new(0, Frame.AbsoluteSize.X, 0, dynamicHeight)
+                        List.Position = UDim2.new(0, absPos.X - mainAbsPos.X, 0, absPos.Y - mainAbsPos.Y + Frame.AbsoluteSize.Y + 4)
+                    end
+                end
+
+                local function Populate(filter)
+                    for _, child in pairs(ItemScroll:GetChildren()) do
+                        if child:IsA("TextButton") then child:Destroy() end
+                    end
+                    for _, item in pairs(Config.Options or {}) do
+                        if filter == "" or string.find(string.lower(tostring(item)), string.lower(tostring(filter))) then
+                            local isSelected = (item == currentlySelected)
+                            local itemBtn = Instance.new("TextButton")
+                            itemBtn.Size = UDim2.new(1, -4, 0, 28)
+                            itemBtn.BorderSizePixel = 0
+                            itemBtn.AutoButtonColor = false
+                            itemBtn.Text = "   " .. tostring(item)
+                            itemBtn.Font = isSelected and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                            itemBtn.TextSize = 12
+                            itemBtn.TextXAlignment = Enum.TextXAlignment.Left
+                            itemBtn.ZIndex = 1002
+                            itemBtn.BackgroundColor3 = isSelected and Colors.Accent or Colors.CardBg
+                            itemBtn.BackgroundTransparency = isSelected and 0.15 or 0.4
+                            itemBtn.TextColor3 = isSelected and Colors.White or Colors.SubText
+                            itemBtn.Parent = ItemScroll
+                            Instance.new("UICorner", itemBtn).CornerRadius = UDim.new(0, 6)
+
+                            itemBtn.MouseEnter:Connect(function()
+                                if item ~= currentlySelected then
+                                    TweenService:Create(itemBtn, TweenInfo.new(0.12), {BackgroundColor3 = Colors.CardHover, BackgroundTransparency = 0, TextColor3 = Colors.Text}):Play()
+                                end
+                            end)
+                            itemBtn.MouseLeave:Connect(function()
+                                if item ~= currentlySelected then
+                                    TweenService:Create(itemBtn, TweenInfo.new(0.12), {BackgroundColor3 = Colors.CardBg, BackgroundTransparency = 0.4, TextColor3 = Colors.SubText}):Play()
+                                end
+                            end)
+
+                            itemBtn.MouseButton1Click:Connect(function()
+                                Label.Text = tostring(item)
+                                currentlySelected = item
+                                CloseAllDropdowns()
+                                if syncConnection then syncConnection:Disconnect() end
+                                UpdateState(Config.ID, item)
+                                if Config.Callback then Config.Callback(item) end
+                            end)
+                        end
+                    end
+                end
+
+                SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                    Populate(SearchBox.Text)
+                    UpdateListPosition()
+                end)
+
+                local dropdownFunc = {}
+
+                function dropdownFunc:Refresh(newList)
+                    Config.Options = newList
+                    Populate("")
+                end
+
+                function dropdownFunc:Update(val)
+                    Label.Text = tostring(val)
+                    currentlySelected = val
+                end
+
+                function dropdownFunc:Set(val)
+                    Label.Text = tostring(val)
+                    currentlySelected = val
+                    UpdateState(Config.ID, val)
+                    if Config.Callback then Config.Callback(val) end
+                end
+
+                if Config.ID then
+                    XPHub.Objects[Config.ID] = {
+                        Type = "Dropdown",
+                        Default = Config.Default,
+                        Update = function(val)
+                            Label.Text = tostring(val)
+                            currentlySelected = val
+                        end,
+                        Callback = Config.Callback or function() end
+                    }
+                end
+
+                DropdownClickBtn.MouseEnter:Connect(function()
+                    TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Accent}):Play()
+                end)
+                DropdownClickBtn.MouseLeave:Connect(function()
+                    if not List.Visible then
+                        TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Border}):Play()
+                    end
+                end)
+
+                DropdownClickBtn.MouseButton1Click:Connect(function()
+                    if List.Visible then
+                        CloseAllDropdowns()
+                        TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Border}):Play()
+                        if syncConnection then syncConnection:Disconnect() end
+                    else
+                        CloseAllDropdowns()
+                        List.Visible = true
+                        activeDropdownList = List
+                        activeDropdownArrow = ArrowIcon
+                        TweenService:Create(ArrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Rotation = 180}):Play()
+                        TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Accent}):Play()
+                        ItemScroll.CanvasPosition = Vector2.new(0, 0)
+                        SearchBox.Text = ""
+                        Populate("")
+                        UpdateListPosition()
+                        if syncConnection then syncConnection:Disconnect() end
+                        syncConnection = RunService.RenderStepped:Connect(UpdateListPosition)
+                    end
+                end)
+
+                return dropdownFunc
+            end
+
+            -- ==========================================
+            -- 4. MultiSelect
+            -- ==========================================
+            function sectionItems:AddMultiSelect(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 205)
+
+                local Frame = Instance.new("Frame")
+                Frame.Size = UDim2.new(0, 180, 0, 34)
+                Frame.Position = UDim2.new(1, -192, 0.5, -17)
+                Frame.BackgroundColor3 = Colors.InputBg
+                Frame.BorderSizePixel = 0
+                Frame.ZIndex = 10
+                Frame.Parent = Row
+                Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 7)
+                local boxStroke = AddStroke(Frame, Colors.Border, 1, 0)
+
+                local Label = Instance.new("TextLabel")
+                Label.Text = "None"
+                Label.Size = UDim2.new(1, -36, 1, 0)
+                Label.Position = UDim2.new(0, 10, 0, 0)
+                Label.BackgroundTransparency = 1
+                Label.TextColor3 = Colors.Text
+                Label.Font = Enum.Font.GothamMedium
+                Label.TextSize = 12
+                Label.TextXAlignment = Enum.TextXAlignment.Left
+                Label.TextTruncate = Enum.TextTruncate.AtEnd
+                Label.ClipsDescendants = true
+                Label.ZIndex = 11
+                Label.Parent = Frame
+
+                local ArrowIcon = Instance.new("ImageLabel")
+                ArrowIcon.Image = "rbxassetid://74976956154520"
+                ArrowIcon.Size = UDim2.new(0, 12, 0, 12)
+                ArrowIcon.Position = UDim2.new(1, -22, 0.5, -6)
+                ArrowIcon.BackgroundTransparency = 1
+                ArrowIcon.ImageColor3 = Colors.SubText
+                ArrowIcon.ZIndex = 12
+                ArrowIcon.Parent = Frame
+
+                local MultiClickBtn = Instance.new("TextButton")
+                MultiClickBtn.Size = UDim2.new(1, 0, 1, 0)
+                MultiClickBtn.BackgroundTransparency = 1
+                MultiClickBtn.Text = ""
+                MultiClickBtn.ZIndex = 15
+                MultiClickBtn.Parent = Frame
+
+                local List = Instance.new("Frame")
+                List.Name = "MultiSelectList"
+                List.BackgroundColor3 = Colors.DropdownBg
+                List.BorderSizePixel = 0
+                List.ZIndex = 1000
+                List.Visible = false
+                List.ClipsDescendants = true
+                List.Parent = MainFrame
+                Instance.new("UICorner", List).CornerRadius = UDim.new(0, 8)
+                AddStroke(List, Colors.BorderHighlight, 1.2, 0)
+
+                local SearchContainer = Instance.new("Frame")
+                SearchContainer.Size = UDim2.new(1, -12, 0, 28)
+                SearchContainer.Position = UDim2.new(0, 6, 0, 6)
+                SearchContainer.BackgroundColor3 = Colors.InputBg
+                SearchContainer.ZIndex = 1001
+                SearchContainer.Parent = List
+                Instance.new("UICorner", SearchContainer).CornerRadius = UDim.new(0, 6)
+                AddStroke(SearchContainer, Colors.Border, 1, 0.3)
+
+                local SearchBox = Instance.new("TextBox")
+                SearchBox.Size = UDim2.new(1, -16, 1, 0)
+                SearchBox.Position = UDim2.new(0, 8, 0, 0)
+                SearchBox.BackgroundTransparency = 1
+                SearchBox.PlaceholderText = "🔍 ค้นหา..."
+                SearchBox.PlaceholderColor3 = Colors.MutedText
+                SearchBox.TextColor3 = Colors.Text
+                SearchBox.Font = Enum.Font.Gotham
+                SearchBox.Text = ""
+                SearchBox.TextSize = 12
+                SearchBox.TextXAlignment = Enum.TextXAlignment.Left
+                SearchBox.ZIndex = 1002
+                SearchBox.Parent = SearchContainer
+
+                local ItemScroll = Instance.new("ScrollingFrame")
+                ItemScroll.Size = UDim2.new(1, -8, 1, -42)
+                ItemScroll.Position = UDim2.new(0, 4, 0, 38)
+                ItemScroll.BackgroundTransparency = 1
+                ItemScroll.BorderSizePixel = 0
+                ItemScroll.ScrollBarThickness = 3
+                ItemScroll.ScrollBarImageColor3 = Colors.Accent
+                ItemScroll.ZIndex = 1001
+                ItemScroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+                ItemScroll.Parent = List
+
+                local ListLayout = Instance.new("UIListLayout", ItemScroll)
+                ListLayout.Padding = UDim.new(0, 3)
+
+                local syncConnection
+                local selectedItems = Config.Default or {}
+                UpdateState(Config.ID, selectedItems)
+
+                local function UpdateLabel()
+                    if type(selectedItems) == "table" then
+                        Label.Text = #selectedItems == 0 and "None" or table.concat(selectedItems, ", ")
+                    else
+                        Label.Text = tostring(selectedItems)
+                    end
+                end
+                UpdateLabel()
+
+                local function UpdateListPosition()
+                    if List.Visible then
+                        local absPos = Frame.AbsolutePosition
+                        local mainAbsPos = MainFrame.AbsolutePosition
+                        local contentHeight = ListLayout.AbsoluteContentSize.Y
+                        ItemScroll.CanvasSize = UDim2.new(0, 0, 0, contentHeight + 6)
+                        local dynamicHeight = math.clamp(contentHeight + 46, 75, 210)
+                        List.Size = UDim2.new(0, Frame.AbsoluteSize.X, 0, dynamicHeight)
+                        List.Position = UDim2.new(0, absPos.X - mainAbsPos.X, 0, absPos.Y - mainAbsPos.Y + Frame.AbsoluteSize.Y + 4)
+                    end
+                end
+
+                local function Populate(filter)
+                    for _, child in pairs(ItemScroll:GetChildren()) do
+                        if child:IsA("TextButton") then child:Destroy() end
+                    end
+                    for _, item in pairs(Config.Options or {}) do
+                        if filter == "" or string.find(string.lower(tostring(item)), string.lower(tostring(filter))) then
+                            local itemBtn = Instance.new("TextButton")
+                            itemBtn.Size = UDim2.new(1, -4, 0, 28)
+                            itemBtn.BorderSizePixel = 0
+                            itemBtn.AutoButtonColor = false
+                            itemBtn.Font = Enum.Font.GothamMedium
+                            itemBtn.TextSize = 12
+                            itemBtn.TextXAlignment = Enum.TextXAlignment.Left
+                            itemBtn.ZIndex = 1002
+                            itemBtn.Parent = ItemScroll
+                            Instance.new("UICorner", itemBtn).CornerRadius = UDim.new(0, 6)
+
+                            local function RefreshColor()
+                                local isChecked = type(selectedItems) == "table" and table.find(selectedItems, item)
+                                if isChecked then
+                                    itemBtn.Text = "  ✓  " .. tostring(item)
+                                    itemBtn.Font = Enum.Font.GothamBold
+                                    itemBtn.BackgroundColor3 = Colors.Accent
+                                    itemBtn.BackgroundTransparency = 0.15
+                                    itemBtn.TextColor3 = Colors.White
+                                else
+                                    itemBtn.Text = "      " .. tostring(item)
+                                    itemBtn.Font = Enum.Font.GothamMedium
+                                    itemBtn.BackgroundColor3 = Colors.CardBg
+                                    itemBtn.BackgroundTransparency = 0.4
+                                    itemBtn.TextColor3 = Colors.SubText
+                                end
+                            end
+                            RefreshColor()
+
+                            itemBtn.MouseButton1Click:Connect(function()
+                                if type(selectedItems) ~= "table" then selectedItems = {} end
+                                local foundIndex = table.find(selectedItems, item)
+                                if foundIndex then
+                                    table.remove(selectedItems, foundIndex)
+                                else
+                                    table.insert(selectedItems, item)
+                                end
+                                RefreshColor()
+                                UpdateLabel()
+                                UpdateState(Config.ID, selectedItems)
+                                if Config.Callback then Config.Callback(selectedItems) end
+                            end)
+                        end
+                    end
+                end
+
+                SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                    Populate(SearchBox.Text)
+                    UpdateListPosition()
+                end)
+
+                if Config.ID and XPHub.Objects then
+                    XPHub.Objects[Config.ID] = {
+                        Type = "MultiSelect",
+                        Update = function(val)
+                            if type(val) == "table" then
+                                selectedItems = val
+                            else
+                                selectedItems = {val}
+                            end
+                            UpdateLabel()
+                        end,
+                        Callback = Config.Callback or function() end
+                    }
+                end
+
+                MultiClickBtn.MouseEnter:Connect(function()
+                    TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Accent}):Play()
+                end)
+                MultiClickBtn.MouseLeave:Connect(function()
+                    if not List.Visible then
+                        TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Border}):Play()
+                    end
+                end)
+
+                MultiClickBtn.MouseButton1Click:Connect(function()
+                    if List.Visible then
+                        CloseAllDropdowns()
+                        TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Border}):Play()
+                        if syncConnection then syncConnection:Disconnect() end
+                    else
+                        CloseAllDropdowns()
+                        List.Visible = true
+                        activeDropdownList = List
+                        activeDropdownArrow = ArrowIcon
+                        TweenService:Create(ArrowIcon, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Rotation = 180}):Play()
+                        TweenService:Create(boxStroke, TweenInfo.new(0.15), {Color = Colors.Accent}):Play()
+                        ItemScroll.CanvasPosition = Vector2.new(0, 0)
+                        SearchBox.Text = ""
+                        Populate("")
+                        UpdateListPosition()
+                        if syncConnection then syncConnection:Disconnect() end
+                        syncConnection = RunService.RenderStepped:Connect(UpdateListPosition)
+                    end
+                end)
+            end
+
+            -- ==========================================
+            -- 5. Input Box
+            -- ==========================================
+            function sectionItems:AddInput(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 180)
+
+                local InputFrame = Instance.new("Frame")
+                InputFrame.Size = UDim2.new(0, 155, 0, 34)
+                InputFrame.Position = UDim2.new(1, -168, 0.5, -17)
+                InputFrame.BackgroundColor3 = Colors.InputBg
+                InputFrame.BorderSizePixel = 0
+                InputFrame.ClipsDescendants = true
+                InputFrame.ZIndex = 9
+                InputFrame.Parent = Row
+                Instance.new("UICorner", InputFrame).CornerRadius = UDim.new(0, 7)
+                local inputStroke = AddStroke(InputFrame, Colors.Border, 1, 0)
+
+                local TextBox = Instance.new("TextBox")
+                TextBox.Size = UDim2.new(1, -18, 1, 0)
+                TextBox.Position = UDim2.new(0, 9, 0, 0)
+                TextBox.BackgroundTransparency = 1
+                TextBox.Text = Config.Default or ""
+                TextBox.PlaceholderText = Config.Placeholder or "พิมพ์ที่นี่..."
+                TextBox.PlaceholderColor3 = Colors.MutedText
+                TextBox.TextColor3 = Colors.Text
+                TextBox.TextSize = 12
+                TextBox.Font = Enum.Font.GothamMedium
+                TextBox.TextXAlignment = Enum.TextXAlignment.Left
+                TextBox.ClearTextOnFocus = false
+                TextBox.ZIndex = 10
+                TextBox.Parent = InputFrame
+
+                if Config.ID and XPHub.Objects then
+                    UpdateState(Config.ID, Config.Default or "")
+                    XPHub.Objects[Config.ID] = {
+                        Type = "Input",
+                        Instance = TextBox,
+                        Callback = Config.Callback,
+                        Update = function(val)
+                            TextBox.Text = tostring(val)
+                        end
+                    }
+                end
+
+                TextBox.Focused:Connect(function()
+                    TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = Colors.Accent, Thickness = 1.4}):Play()
+                end)
+
+                TextBox.FocusLost:Connect(function(enterPressed)
+                    TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = Colors.Border, Thickness = 1}):Play()
+                    local currentText = TextBox.Text
+                    if Config.ID then
+                        UpdateState(Config.ID, currentText)
+                    end
+                    if Config.Callback then
+                        Config.Callback(currentText, enterPressed)
+                    end
+                end)
+
+                return Row
+            end
+
+            -- ==========================================
+            -- 6. Button
+            -- ==========================================
+            function sectionItems:AddButton(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 155)
+
+                local Button = Instance.new("TextButton")
+                Button.Name = "ActionBtn"
+                Button.Size = UDim2.new(0, 125, 0, 32)
+                Button.Position = UDim2.new(1, -138, 0.5, -16)
+                Button.BackgroundColor3 = Colors.ButtonBg
+                Button.AutoButtonColor = false
+                Button.Text = Config.ButtonText or "Click"
+                Button.Font = Enum.Font.GothamBold
+                Button.TextSize = 12
+                Button.TextColor3 = Colors.Text
+                Button.ZIndex = 9
+                Button.Parent = Row
+                Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 7)
+                local btnStroke = AddStroke(Button, Colors.BorderHighlight, 1, 0.2)
+
+                Button.MouseEnter:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.15), {BackgroundColor3 = Colors.Accent}):Play()
+                    TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = Colors.AccentLight, Transparency = 0}):Play()
+                end)
+
+                Button.MouseLeave:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.15), {BackgroundColor3 = Colors.ButtonBg}):Play()
+                    TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = Colors.BorderHighlight, Transparency = 0.2}):Play()
+                end)
+
+                Button.MouseButton1Down:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.08), {BackgroundColor3 = Colors.AccentDark}):Play()
+                end)
+
+                Button.MouseButton1Up:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.08), {BackgroundColor3 = Colors.Accent}):Play()
+                end)
+
+                Button.MouseButton1Click:Connect(function()
+                    if Config.Callback then Config.Callback() end
+                end)
+
+                return Button
+            end
+
+            -- ==========================================
+            -- 7. Label / Status Banner
+            -- ==========================================
+            function sectionItems:AddLabel(Title)
+                local Row = Instance.new("Frame")
+                Row.Size = UDim2.new(1, -4, 0, 38)
+                Row.BackgroundColor3 = Colors.SectionHeaderBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AddStroke(Row, Colors.Border, 1, 0.3)
+
+                local Accent = Instance.new("Frame")
+                Accent.Size = UDim2.new(0, 3, 1, -12)
+                Accent.Position = UDim2.new(0, 6, 0.5, 0)
+                Accent.AnchorPoint = Vector2.new(0, 0.5)
+                Accent.BackgroundColor3 = Colors.Accent
+                Accent.BorderSizePixel = 0
+                Accent.ZIndex = 8
+                Accent.Parent = Row
+                Instance.new("UICorner", Accent).CornerRadius = UDim.new(1, 0)
+
+                local TTitle = Instance.new("TextLabel")
+                TTitle.Text = "ℹ️  " .. tostring(Title)
+                TTitle.Size = UDim2.new(1, -28, 1, 0)
+                TTitle.Position = UDim2.new(0, 18, 0, 0)
+                TTitle.Font = Enum.Font.GothamMedium
+                TTitle.TextSize = 12
+                TTitle.TextColor3 = Colors.AccentLight
+                TTitle.TextXAlignment = Enum.TextXAlignment.Left
+                TTitle.TextWrapped = true
+                TTitle.BackgroundTransparency = 1
+                TTitle.ZIndex = 8
+                TTitle.Parent = Row
+
+                TTitle:GetPropertyChangedSignal("Text"):Connect(function()
+                    local textHeight = TTitle.TextBounds.Y
+                    Row.Size = UDim2.new(1, -4, 0, math.max(38, textHeight + 16))
+                end)
+
+                local labelFunc = {}
+                function labelFunc:Set(newText)
+                    TTitle.Text = "ℹ️  " .. tostring(newText)
+                end
+                function labelFunc:SetColor(color)
+                    Accent.BackgroundColor3 = color
+                    TTitle.TextColor3 = color
+                end
+
+                return labelFunc
+            end
+
+            -- ==========================================
+            -- 8. Keybind
+            -- ==========================================
+            function sectionItems:AddKeybind(Config)
+                local Row = Instance.new("Frame")
+                Row.Size = SizeItem.BoxItem
+                Row.BackgroundColor3 = Colors.CardBg
+                Row.BorderSizePixel = 0
+                Row.ZIndex = 7
+                Row.Parent = SectionFrame
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 8)
+                AttachCardHover(Row)
+
+                CreateRowLabels(Row, Config.Title, Config.Description, 125)
+
+                local currentKey = Config.Default
+                local keyConnection
+
+                local BindButton = Instance.new("TextButton")
+                BindButton.Size = UDim2.new(0, 96, 0, 30)
+                BindButton.Position = UDim2.new(1, -110, 0.5, -15)
+                BindButton.BackgroundColor3 = Colors.InputBg
+                BindButton.AutoButtonColor = false
+                BindButton.Text = currentKey and "[ " .. currentKey.Name .. " ]" or "[ None ]"
+                BindButton.Font = Enum.Font.RobotoMono
+                BindButton.TextSize = 12
+                BindButton.TextColor3 = Colors.AccentLight
+                BindButton.ZIndex = 9
+                BindButton.Parent = Row
+                Instance.new("UICorner", BindButton).CornerRadius = UDim.new(0, 6)
+                local bStroke = AddStroke(BindButton, Colors.BorderHighlight, 1, 0.2)
+
+                if currentKey then
+                    UpdateState(Config.ID, currentKey.Name)
+                end
+
+                local function StartListening()
+                    if keyConnection then keyConnection:Disconnect() end
+                    if not currentKey then return end
+
+                    keyConnection = UserInputService.InputBegan:Connect(function(input, gp)
+                        if gp or IsBinding then return end
+                        if input.KeyCode == currentKey then
+                            if Config.Callback then Config.Callback(currentKey) end
+                        end
+                    end)
+
+                    if Config.ID and XPHub.Objects[Config.ID] then
+                        XPHub.Objects[Config.ID].Connection = keyConnection
+                    end
+                end
+
+                if Config.ID and XPHub.Objects then
+                    XPHub.Objects[Config.ID] = {
+                        Type = "Keybind",
+                        Stop = function()
+                            if keyConnection then
+                                keyConnection:Disconnect()
+                                keyConnection = nil
+                            end
+                        end,
+                        Update = function(valName)
+                            if not valName or valName == "" then return end
+                            if typeof(valName) == "string" and Enum.KeyCode[valName] then
+                                currentKey = Enum.KeyCode[valName]
+                                BindButton.Text = "[ " .. valName .. " ]"
+                                StartListening()
+                            end
+                        end
+                    }
+                end
+
+                if currentKey then StartListening() end
+
+                BindButton.MouseButton1Click:Connect(function()
+                    if IsBinding then return end
+                    IsBinding = true
+                    BindButton.Text = "[ Press... ]"
+                    BindButton.TextColor3 = Colors.White
+                    TweenService:Create(bStroke, TweenInfo.new(0.15), {Color = Colors.Accent, Transparency = 0}):Play()
+
+                    local tempConnection
+                    tempConnection = UserInputService.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.Keyboard then
+                            local newKey = input.KeyCode
+                            if newKey ~= Enum.KeyCode.Escape then
+                                currentKey = newKey
+                                BindButton.Text = "[ " .. newKey.Name .. " ]"
+                                UpdateState(Config.ID, newKey.Name)
+                                StartListening()
+                            else
+                                BindButton.Text = currentKey and "[ " .. currentKey.Name .. " ]" or "[ None ]"
+                            end
+
+                            BindButton.TextColor3 = Colors.AccentLight
+                            TweenService:Create(bStroke, TweenInfo.new(0.15), {Color = Colors.BorderHighlight, Transparency = 0.2}):Play()
+                            tempConnection:Disconnect()
+                            task.wait(0.05)
+                            IsBinding = false
+                        end
+                    end)
+                end)
+            end
+
+            return sectionItems
+        end
+        return tab
     end
 
-
-
-
-
-    -- ####### เริ่มใช้งาน XP Hub Premium API #######
-
-    local Win = XPHub:Window({
-        Title = UI_TITLE,
-    })
-
-    -- ตัวอย่างการเรียกใช้งาน
-    local Tab1 = Win:AddTab({
-        Name = "Dashboard",
-        Icon = "rbxassetid://7733960981" -- ใส่ ID ของ Icon ที่คุณต้องการ
-    })
-    local Sec1 = Tab1:AddSection("🔥 General", "ปรับปรุงระบบโครงสร้างใหม่")
-
-    Sec1:AddDropdown({
-        ID = "TargetNPC", -- เพิ่ม ID
-        Title = "เลือกศัตรูเป้าหมาย",
-        Description = "เลือก NPC ที่ต้องการให้ระบบฟาร์มโจมตี",
-        Options = {"Monkey", "Gorilla", "Goden Sun", "Snowman", "Yeti", "Dragon", "Snowman2", "Yeti2", "Dragon2"},
-        Default = "Monkey",
-        Callback = function(v) print("Selected NPC:", v) end
-    })
-
-    Sec1:AddMultiSelect({
-        ID = "SelectedItems", -- เพิ่ม ID
-        Title = "Select Items",
-        Description = "เลือกได้หลายรายการ",
-        Options = {"Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6", "Item 7", "Item 8"},
-        Default = {"Item 1"},
-        Callback = function(v) print("Current Selected:", table.concat(v, ", ")) end
-    })
-
-    Sec1:AddToggleSwitch({
-        ID = "AutoFarm", -- เพิ่ม ID
-        Title = "Enable Farm",
-        Description = "ฟาร์มมอนสเตอร์ที่เลือกไว้",
-        Default = false,
-        Callback = function(v) end
-    })
-
-    Sec1:AddSlider({
-        ID = "CharacterSpeed", -- เพิ่ม ID
-        Title = "WalkSpeed",
-        Description = "ปรับความเร็วในการเคลื่อนที่",
-        Min = 16,
-        Max = 300,
-        Default = 16,
-        Callback = function(v)
-            if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
-                game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v
-            end
+    ScreenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if StartBtn then
+            AdjustStartBtnByRatio(StartBtn)
         end
-    })
+    end)
 
-    Sec1:AddSlider({
-        ID = "FieldOfView", -- เพิ่ม ID
-        Title = "Field of View",
-        Description = "ปรับระยะการมองเห็น (FOV)",
-        Min = 70,
-        Max = 120,
-        Default = 70,
-        Callback = function(v)
-            workspace.CurrentCamera.FieldOfView = v
+    return window
+end
+
+
+-- =====================================================================
+-- 🚀 เริ่มใช้งาน XP Hub Premium API (ตัวอย่างการใช้งานของคุณ)
+-- =====================================================================
+
+local Win = XPHub:Window({
+    Title = UI_TITLE,
+})
+
+local Tab1 = Win:AddTab({
+    Name = "Dashboard",
+    Icon = "rbxassetid://7733960981"
+})
+
+local Sec1 = Tab1:AddSection("🔥 General", "ปรับปรุงระบบโครงสร้างใหม่")
+
+Sec1:AddDropdown({
+    ID = "TargetNPC",
+    Title = "เลือกศัตรูเป้าหมาย",
+    Description = "เลือก NPC ที่ต้องการให้ระบบฟาร์มโจมตี",
+    Options = {"Monkey", "Gorilla", "Goden Sun", "Snowman", "Yeti", "Dragon", "Snowman2", "Yeti2", "Dragon2"},
+    Default = "Monkey",
+    Callback = function(v) print("Selected NPC:", v) end
+})
+
+Sec1:AddMultiSelect({
+    ID = "SelectedItems",
+    Title = "Select Items",
+    Description = "เลือกได้หลายรายการ",
+    Options = {"Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6", "Item 7", "Item 8"},
+    Default = {"Item 1"},
+    Callback = function(v) print("Current Selected:", table.concat(v, ", ")) end
+})
+
+Sec1:AddToggleSwitch({
+    ID = "AutoFarm",
+    Title = "Enable Farm",
+    Description = "ฟาร์มมอนสเตอร์ที่เลือกไว้",
+    Default = false,
+    Callback = function(v) end
+})
+
+Sec1:AddSlider({
+    ID = "CharacterSpeed",
+    Title = "WalkSpeed",
+    Description = "ปรับความเร็วในการเคลื่อนที่",
+    Min = 16,
+    Max = 300,
+    Default = 16,
+    Callback = function(v)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = v
         end
-    })
+    end
+})
 
-    Sec1:AddInput({
-        ID = "WebhookURL", -- เพิ่ม ID
-        Title = "Webhook URL",
-        Description = "ใส่ URL สำหรับส่งข้อมูลไปยัง Discord",
-        Placeholder = "https://discord.com/api/...",
-        Callback = function(text, enter)
-            print("Webhook set to:", text)
-        end
-    })
+Sec1:AddSlider({
+    ID = "FieldOfView",
+    Title = "Field of View",
+    Description = "ปรับระยะการมองเห็น (FOV)",
+    Min = 70,
+    Max = 120,
+    Default = 70,
+    Callback = function(v)
+        workspace.CurrentCamera.FieldOfView = v
+    end
+})
 
+Sec1:AddInput({
+    ID = "WebhookURL",
+    Title = "Webhook URL",
+    Description = "ใส่ URL สำหรับส่งข้อมูลไปยัง Discord",
+    Placeholder = "https://discord.com/api/...",
+    Callback = function(text, enter)
+        print("Webhook set to:", text)
+    end
+})
 
-    Sec1:AddButton({
-        Title = "Reset Character",
-        Description = "ฆ่าตัวตายเพื่อกลับจุดเกิด",
-        ButtonText = "Reset Now",
-        Callback = function()
-            game.Players.LocalPlayer.Character:BreakJoints()
+Sec1:AddButton({
+    Title = "Reset Character",
+    Description = "ฆ่าตัวตายเพื่อกลับจุดเกิด",
+    ButtonText = "Reset Now",
+    Callback = function()
+        if LocalPlayer.Character then
+            LocalPlayer.Character:BreakJoints()
             print("ตัวละครถูกรีเซ็ตแล้ว")
         end
-    })
+    end
+})
 
-    Sec1:AddButton({
-        Title = "Copy Job ID",
-        Description = "คัดลอกไอดีเซิร์ฟเวอร์ปัจจุบัน",
-        ButtonText = "Copy",
-        Callback = function()
+Sec1:AddButton({
+    Title = "Copy Job ID",
+    Description = "คัดลอกไอดีเซิร์ฟเวอร์ปัจจุบัน",
+    ButtonText = "Copy",
+    Callback = function()
+        if setclipboard then
             setclipboard(game.JobId)
             print("คัดลอก Job ID แล้ว!")
         end
-    })
+    end
+})
 
-    ------------------------------------------------------- Tab 2 -------------------------------------------------------
+------------------------------------------------------- Tab 2 -------------------------------------------------------
 
-    local Tab2 = Win:AddTab({
-        Name = "Settings",
-        Icon = "rbxassetid://7734053495"
-    })
+local Tab2 = Win:AddTab({
+    Name = "Settings",
+    Icon = "rbxassetid://7734053495"
+})
 
-    local Sec2 = Tab2:AddSection("⌨️ Keybind Open/Minimize UI", "ตั้งค่าปุ่มเปิด/ปิดหน้าจอ (Keybind)")
+local SecKeybind = Tab2:AddSection("⌨️ Keybind Open/Minimize UI", "ตั้งค่าปุ่มเปิด/ปิดหน้าจอ (Keybind)")
 
-    -- 1. ตัว Toggle
-    Sec2:AddToggleSwitch({
-        ID = "EnableBind_UI",
-        Title = "Enable Keybind",
-        Description = "เปิดใช้งานปุ่มเปิด/ปิดหน้าจอ",
-        Default = false,
-        Callback = function(v) 
-            -- ค่า v จะถูกเก็บเข้า XPHub.ConfigData["EnableBind_UI"] อัตโนมัติ
+SecKeybind:AddToggleSwitch({
+    ID = "EnableBind_UI",
+    Title = "Enable Keybind",
+    Description = "เปิดใช้งานปุ่มเปิด/ปิดหน้าจอ",
+    Default = false,
+    Callback = function(v) end
+})
+
+SecKeybind:AddKeybind({
+    ID = "MenuBind",
+    Title = "Keybind Open/Close",
+    Description = "กดปุ่มลัดเพื่อซ่อนหรือแสดงเมนูหลัก",
+    Default = Enum.KeyCode.G,
+    Callback = function(key)
+        if XPHub.ConfigData["EnableBind_UI"] == true and XPHub.ToggleUI then
+            XPHub.ToggleUI()
         end
-    })
+    end
+})
 
-    Sec2:AddKeybind({
-        ID = "MenuBind",
-        Title = "Keybind Open/Close",
-        Default = Enum.KeyCode.G, 
-        Callback = function(key) 
-            local Frame = XPHub.MainFrame -- ดึงจากจุดที่เก็บไว้
-            if Frame and XPHub.ConfigData["EnableBind_UI"] == true then
-                Frame.Visible = not Frame.Visible
+local SecConfig = Tab2:AddSection("⚙️ Configuration (Save/Load)", "ระบบบันทึก Config (Save/Load)")
+
+local StatusLabel
+local ConfigName = ""
+local SelectedFile = ""
+local ConfigDropdown
+
+SecConfig:AddInput({
+    Title = "Config Name",
+    Description = "พิมพ์ชื่อที่ต้องการบันทึกใหม่",
+    Placeholder = "เช่น ProFarm_V1",
+    Callback = function(text)
+        ConfigName = text
+    end
+})
+
+SecConfig:AddButton({
+    Title = "Create Config",
+    Description = "บันทึกการตั้งค่าปัจจุบันลงไฟล์ใหม่",
+    ButtonText = "Create New",
+    Callback = function()
+        if ConfigName ~= "" then
+            SaveCurrentConfig(ConfigName)
+            if ConfigDropdown and ConfigDropdown.Refresh then
+                ConfigDropdown:Refresh(GetConfigList())
             end
+            print("Saved New: " .. ConfigName)
         end
-    })
+    end
+})
 
+ConfigDropdown = SecConfig:AddDropdown({
+    Title = "Config List",
+    Description = "เลือกไฟล์ที่ต้องการจัดการ",
+    Options = GetConfigList(),
+    Default = "---",
+    Callback = function(selected)
+        SelectedFile = selected
+    end
+})
 
-    local Sec2 = Tab2:AddSection("⚙️ Configuration (Save/Load)", "ระบบบันทึก Config (Save/Load)")
-
-    -- [1] ย้ายตัวแปรสำคัญขึ้นมาประกาศไว้ด้านบนสุดของหน้า เพื่อให้ปุ่มทุกปุ่มมองเห็น
-    local StatusLabel
-    local ConfigName = ""
-    local SelectedFile = ""
-    local ConfigDropdown -- เตรียมไว้สำหรับรับค่าจาก AddDropdown
-
-    -- [2] ส่วนกรอกชื่อไฟล์
-    Sec2:AddInput({
-        Title = "Config Name",
-        Description = "พิมพ์ชื่อที่ต้องการบันทึกใหม่",
-        Placeholder = "เช่น ProFarm_V1",
-        Callback = function(text) 
-            ConfigName = text 
+SecConfig:AddButton({
+    Title = "Overwrite Config",
+    Description = "เซฟทับไฟล์ที่เลือกอยู่ใน List",
+    ButtonText = "Overwrite",
+    Callback = function()
+        if SelectedFile ~= "" and SelectedFile ~= "---" then
+            SaveCurrentConfig(SelectedFile)
+            print("Overwrote: " .. SelectedFile)
         end
-    })
+    end
+})
 
-    -- [3] ปุ่มสร้าง Config ใหม่
-    Sec2:AddButton({
-        Title = "Create Config",
-        Description = "บันทึกการตั้งค่าปัจจุบันลงไฟล์ใหม่",
-        ButtonText = "Create New",
-        Callback = function()
-            if ConfigName ~= "" then
-                if SaveCurrentConfig then 
-                    SaveCurrentConfig(ConfigName) 
-                    -- สั่ง Refresh รายชื่อใน Dropdown ทันที
-                    if ConfigDropdown and ConfigDropdown.Refresh then
-                        ConfigDropdown:Refresh(GetConfigList())
-                    end
-                    print("Saved New: " .. ConfigName)
-                else
-                    warn("Error: SaveCurrentConfig function not found!")
+SecConfig:AddButton({
+    Title = "Load Config",
+    Description = "ดึงค่าจากไฟล์มาใช้งาน",
+    ButtonText = "Load",
+    Callback = function()
+        if SelectedFile ~= "" and SelectedFile ~= "---" then
+            LoadConfigData(SelectedFile)
+            print("Loaded: " .. SelectedFile)
+        end
+    end
+})
+
+SecConfig:AddButton({
+    Title = "Set as Autoload",
+    Description = "ตั้งให้โหลดไฟล์นี้ทุกครั้งที่รันสคริปต์",
+    ButtonText = "Set Auto",
+    Callback = function()
+        if SelectedFile ~= "" and SelectedFile ~= "---" then
+            SetAutoload(SelectedFile)
+            StatusLabel:Set("Current Autoload: " .. SelectedFile)
+            print("Autoload set to: " .. SelectedFile)
+        end
+    end
+})
+
+SecConfig:AddButton({
+    Title = "Reset Autoload",
+    Description = "ยกเลิกการโหลดอัตโนมัติ",
+    ButtonText = "Reset",
+    Callback = function()
+        ResetAutoload()
+        StatusLabel:Set("Current Autoload: None")
+        print("Autoload Disabled")
+    end
+})
+
+SecConfig:AddButton({
+    Title = "Delete Config",
+    Description = "ลบไฟล์การตั้งค่าที่เลือกอยู่ถาวร",
+    ButtonText = "Delete",
+    Callback = function()
+        if SelectedFile ~= "" and SelectedFile ~= "---" then
+            local filePath = ConfigFolder .. "/" .. SelectedFile .. ".json"
+            if isfile and delfile and isfile(filePath) then
+                delfile(filePath)
+                if ConfigDropdown then
+                    ConfigDropdown:Refresh(GetConfigList())
+                    ConfigDropdown:Set("---")
                 end
+                SelectedFile = ""
+                print("Deleted and Reset Dropdown!")
             end
         end
-    })
+    end
+})
 
-    -- [4] Dropdown แสดงรายชื่อไฟล์ (กำหนดค่าเข้าตัวแปร ConfigDropdown ที่ประกาศไว้ด้านบน)
-    ConfigDropdown = Sec2:AddDropdown({
-        Title = "Config List",
-        Description = "เลือกไฟล์ที่ต้องการจัดการ",
-        Options = GetConfigList(),
-        Default = "---",
-        Callback = function(selected) 
-            SelectedFile = selected 
-        end
-    })
+StatusLabel = SecConfig:AddLabel("Current Autoload: " .. (GetAutoload() or "None"))
 
-    -- [5] แผงปุ่มจัดการไฟล์ที่เลือก
-    Sec2:AddButton({
-        Title = "Overwrite Config",
-        Description = "เซฟทับไฟล์ที่เลือกอยู่ใน List",
-        ButtonText = "Overwrite",
-        Callback = function()
-            if SelectedFile ~= "" and SelectedFile ~= "---" then
-                SaveCurrentConfig(SelectedFile)
-                print("Overwrote: " .. SelectedFile)
-            end
-        end
-    })
-
-    Sec2:AddButton({
-        Title = "Load Config",
-        Description = "ดึงค่าจากไฟล์มาใช้งาน",
-        ButtonText = "Load",
-        Callback = function()
-            if SelectedFile ~= "" and SelectedFile ~= "---" then
-                local data = LoadConfigData(SelectedFile)
-                -- บันทึก: คุณต้องเขียนฟังก์ชัน ApplySettings(data) เพื่ออัปเดต UI หน้าอื่นๆ ด้วย
-                print("Loaded: " .. SelectedFile)
-            end
-        end
-    })
-
-    Sec2:AddButton({
-        Title = "Set as Autoload",
-        Description = "ตั้งให้โหลดไฟล์นี้ทุกครั้งที่รันสคริปต์",
-        ButtonText = "Set Auto",
-        Callback = function()
-            if SelectedFile ~= "" and SelectedFile ~= "---" then
-                SetAutoload(SelectedFile)
-                StatusLabel:Set("Current Autoload: " .. SelectedFile) -- เรียกใช้ได้เพราะประกาศไว้ด้านบนแล้ว
-                print("Autoload set to: " .. SelectedFile)
-            end
-        end
-    })
-
-    Sec2:AddButton({
-        Title = "Reset Autoload",
-        Description = "ยกเลิกการโหลดอัตโนมัติ",
-        ButtonText = "Reset",
-        Callback = function()
-            ResetAutoload()
-            StatusLabel:Set("Current Autoload: None")
-            print("Autoload Disabled")
-        end
-    })
-
-    -- 4. ปุ่ม Delete (แก้ไขให้รีเซ็ตข้อความบนหน้าจอด้วย)
-    Sec2:AddButton({
-        Title = "Delete Config",
-        ButtonText = "Delete",
-        Callback = function()
-            if SelectedFile ~= "" and SelectedFile ~= "---" then
-                local filePath = ConfigFolder .. "/" .. SelectedFile .. ".json"
-                if isfile(filePath) then
-                    delfile(filePath) -- ลบไฟล์จริง
-                    
-                    -- [จุดที่แก้ไข]
-                    if ConfigDropdown then
-                        ConfigDropdown:Refresh(GetConfigList()) -- อัปเดตรายชื่อใน List
-                        ConfigDropdown:Set("---") -- รีเซ็ตข้อความบนปุ่มให้กลับเป็นค่าเริ่มต้น
-                    end
-                    
-                    SelectedFile = "" -- ล้างค่าตัวแปรที่เลือกอยู่
-                    print("Deleted and Reset Dropdown!")
-                end
-            end
-        end
-    })
-
-    StatusLabel = Sec2:AddLabel("Current Autoload: " .. (GetAutoload() or "None"))
-
-    -- ส่วนล่าง: ระบบ Autoload
-    -- ### AUTOLOAD EXECUTION ###
-    task.spawn(function()
-        task.wait(1.5)
-        local auto = GetAutoload()
-        if auto then LoadConfigData(auto) end
-    end)
+-- ### AUTOLOAD EXECUTION ###
+task.spawn(function()
+    task.wait(1.5)
+    local auto = GetAutoload()
+    if auto then LoadConfigData(auto) end
+end)
