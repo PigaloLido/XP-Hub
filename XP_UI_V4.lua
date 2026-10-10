@@ -1,3 +1,5 @@
+ช่วยปรับUI ให้น่าใช้กว่านี้หน่อยสิ มันไม่สวยอะ แก้ให้หน่อย 
+
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
